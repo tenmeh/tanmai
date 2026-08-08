@@ -7,7 +7,8 @@
 maia_session_start(rating = 1500L)
 }
 \arguments{
-\item{rating}{Target rating; snapped to the nearest available network.}
+\item{rating}{Target rating; snapped to the nearest network that is actually
+installed.}
 }
 \value{
 A session list, or \code{NULL} if lc0 or the weights are missing.

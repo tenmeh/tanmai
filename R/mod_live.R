@@ -631,7 +631,10 @@ mod_live_server <- function(id, chess_ctx) {
         div(
           class = "cv-radar-controls",
           selectInput(ns("review_rating"), "Explain it for a player rated",
-            c("Estimated from this game" = "auto", "1100", "1500", "1900"),
+            c(
+              stats::setNames("auto", "Estimated from this game"),
+              stats::setNames(as.character(MAIA_RATINGS), as.character(MAIA_RATINGS))
+            ),
             selected = "auto", width = "260px"
           ),
           actionButton(ns("explain"), "Was this predictable?")

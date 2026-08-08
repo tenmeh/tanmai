@@ -158,6 +158,7 @@ reference:
       - maia_dir
       - maia_weights_path
       - match_maia_rating
+      - nearest_installed_rating
       - find_lc0
       - ensure_maia
       - human_model_available

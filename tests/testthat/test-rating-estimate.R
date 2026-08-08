@@ -96,7 +96,7 @@ test_that("the networks disagree enough for a played move to carry signal", {
   scholars <- "r1bqkbnr/pppp1ppp/2n5/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR b KQkq - 3 3"
   ll <- move_log_likelihood(pool, scholars, "g8f6")
 
-  expect_length(ll, length(MAIA_RATINGS))
+  expect_length(ll, length(MAIA_ESTIMATOR_RATINGS))
   expect_false(anyNA(ll))
   expect_true(all(ll < 0)) # log of a probability
   # If every network assigned this the same probability, no game could ever
@@ -159,7 +159,7 @@ test_that("games played by a known network are attributed to it", {
   # here - this asserts the estimator works, not that it is infallible.
   set.seed(8113)
   truth <- 1100L
-  others <- setdiff(MAIA_RATINGS, truth)
+  others <- setdiff(MAIA_ESTIMATOR_RATINGS, truth)
   total <- stats::setNames(rep(0, length(pool)), names(pool))
   moves <- 0L
   for (g in 1:4) {

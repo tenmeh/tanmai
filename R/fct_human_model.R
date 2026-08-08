@@ -11,7 +11,24 @@
 # Everything downstream depends only on `human_move_probabilities()`, so the
 # model behind it can be swapped without touching the Blunder Radar metrics.
 
-MAIA_RATINGS <- c(1100L, 1500L, 1900L)
+# Every Maia network CSSLab published: 1100 to 1900 in hundreds. Verified
+# against the repository - maia-1000 and maia-2000 return 404, so this is the
+# whole range that exists, not a selection from it. The slider therefore cannot
+# be widened past these bounds, only subdivided within them.
+MAIA_RATINGS <- seq(1100L, 1900L, by = 100L)
+
+# The rating *estimator* deliberately uses a coarser grid than the slider.
+#
+# Its published accuracy - right about 75% of the time, and 94% when it chooses
+# to speak - was measured over these three networks on a corpus of 103 games,
+# and the confidence rule that produces those numbers asks for 70% of the
+# posterior mass to sit on one network. Adjacent Maia networks play very
+# similarly, so on a nine-way grid that mass spreads across neighbours and the
+# estimator would fall silent almost always - not because it knows less, but
+# because it is being asked a harder question than the one it was calibrated
+# for. Widening this needs a re-derived confidence rule measured against a
+# fresh corpus, which is a separate piece of work.
+MAIA_ESTIMATOR_RATINGS <- c(1100L, 1500L, 1900L)
 
 LC0_ASSETS_WINDOWS <- c(
   "https://github.com/LeelaChessZero/lc0/releases/download/v0.32.1/lc0-v0.32.1-windows-cpu-dnnl.zip",
@@ -67,7 +84,7 @@ find_lc0 <- function() {
 
 #' Path to a Maia weights file for a rating
 #'
-#' @param rating One of 1100, 1500 or 1900.
+#' @param rating A rating with a Maia network: 1100 to 1900 in hundreds.
 #' @return The expected weights path (which may not exist yet).
 maia_weights_path <- function(rating = 1500L) {
   rating <- match_maia_rating(rating)
@@ -77,14 +94,39 @@ maia_weights_path <- function(rating = 1500L) {
 #' Snap a requested rating to the nearest available Maia network
 #'
 #' @param rating A numeric rating.
-#' @return The closest rating for which a Maia network exists (1100, 1500 or
-#'   1900); 1500 when `rating` is missing.
+#' @return The closest rating for which a Maia network exists - 1100 to 1900 in
+#'   hundreds; 1500 when `rating` is missing. Ties go to the lower network,
+#'   which only arises for exact multiples of fifty.
 match_maia_rating <- function(rating) {
   rating <- suppressWarnings(as.integer(rating))
   if (is.na(rating)) {
     return(1500L)
   }
   MAIA_RATINGS[which.min(abs(MAIA_RATINGS - rating))]
+}
+
+#' Nearest Maia network whose weights are actually on disk
+#'
+#' [match_maia_rating()] answers which networks *exist*; this answers which can
+#' be used right now. The two differ on any machine that has not fetched the
+#' full set, and the slider offers every rating regardless - so without this a
+#' stop like 1300 would silently turn the Blunder Radar off rather than model
+#' the nearest strength available.
+#'
+#' @param rating A numeric rating.
+#' @return The closest installed rating, or `NA_integer_` if none are.
+nearest_installed_rating <- function(rating) {
+  have <- MAIA_RATINGS[file.exists(vapply(
+    MAIA_RATINGS,
+    function(r) file.path(maia_dir(), sprintf("maia-%d.pb.gz", r)),
+    character(1)
+  ))]
+  if (!length(have)) {
+    return(NA_integer_)
+  }
+  rating <- suppressWarnings(as.integer(rating))
+  if (is.na(rating)) rating <- 1500L
+  have[which.min(abs(have - rating))]
 }
 
 #' Download lc0 and the Maia weights if they are not already present
@@ -129,10 +171,19 @@ ensure_maia <- function(ratings = MAIA_RATINGS) {
 
 #' Is a human model usable right now?
 #'
+#' Asks whether the radar can say *something* about a player of this strength,
+#' not whether that exact network is installed - [maia_session_start()] falls
+#' back to the nearest one it has. Deliberately permissive, because it gates a
+#' feature: refusing to model a 1300 because only 1100 and 1500 are downloaded
+#' would turn the radar off for a rating it can very nearly answer.
+#'
+#' Build-time checks that a specific set of weights really is present should
+#' test the files directly rather than call this.
+#'
 #' @param rating Desired rating.
-#' @return `TRUE` when both lc0 and the weights for `rating` are present.
+#' @return `TRUE` when lc0 and at least one Maia network are present.
 human_model_available <- function(rating = 1500L) {
-  !is.null(find_lc0()) && file.exists(maia_weights_path(rating))
+  !is.null(find_lc0()) && !is.na(nearest_installed_rating(rating))
 }
 
 #' Start a persistent Maia session
@@ -140,13 +191,21 @@ human_model_available <- function(rating = 1500L) {
 #' Loading the network costs a second or two, so the process is kept alive and
 #' reused; each subsequent query is a single forward pass.
 #'
-#' @param rating Target rating; snapped to the nearest available network.
+#' @param rating Target rating; snapped to the nearest network that is actually
+#'   installed.
 #' @return A session list, or `NULL` if lc0 or the weights are missing.
 maia_session_start <- function(rating = 1500L) {
-  rating <- match_maia_rating(rating)
+  # Nearest *installed* network, not merely nearest that exists. A deployed
+  # image bakes in all nine, but a development machine or a partial image may
+  # hold only some, and answering "close enough" beats refusing to model a
+  # human at all because 1300 happens not to be downloaded.
+  rating <- nearest_installed_rating(rating)
   exe <- find_lc0()
+  if (is.null(exe) || is.na(rating)) {
+    return(NULL)
+  }
   weights <- maia_weights_path(rating)
-  if (is.null(exe) || !file.exists(weights)) {
+  if (!file.exists(weights)) {
     return(NULL)
   }
 

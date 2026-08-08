@@ -1,3 +1,38 @@
+# tanmai 1.4.0
+
+## New features
+
+* **The opponent-rating slider now offers every hundred from 1100 to 1900**,
+  rather than three settings 400 points apart. Each stop is a real trained
+  network, not the nearest of a coarse few, so asking about a 1300 gets you a
+  model of a 1300.
+
+  The range itself cannot be widened: CSSLab trained Maia for 1100-1900 and
+  nothing outside it exists - `maia-1000` and `maia-2000` both 404. Verified
+  against the repository rather than assumed, and the bound is now stated in
+  the code so the next person does not go looking.
+
+* The Blunder Radar falls back to the nearest network it actually has, instead
+  of switching itself off. Deployed images bake in all nine, but a development
+  machine may hold only some, and modelling a 1300 as the 1400 you do have
+  beats declining to model a human at all.
+
+## Notes
+
+* The rating **estimator** deliberately keeps its three-network grid. Its
+  published accuracy - right about 75% of the time, 94% when it chooses to
+  speak - was measured over those three, and the rule producing those figures
+  wants 70% of the posterior on a single network. Adjacent Maia networks play
+  very similarly, so on a nine-way grid that mass spreads across neighbours and
+  the estimator would fall silent almost always: not because it knows less, but
+  because it is being asked a harder question than the one it was calibrated
+  for. Widening it needs a re-derived confidence rule and a fresh corpus.
+
+* The image build now asserts on the weight files directly. Checking
+  `human_model_available()` for each rating would have become vacuous once that
+  function learned to fall back, and a build check that cannot fail is worse
+  than none.
+
 # tanmai 1.3.1
 
 ## Bug fixes

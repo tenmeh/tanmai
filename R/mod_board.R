@@ -61,7 +61,11 @@ mod_board_ui <- function(id) {
             conditionalPanel(
               condition = "input.radar_on",
               ns = ns,
-              sliderInput(ns("rating"), "Opponent rating", 1100, 1900, 1500, step = 400)
+              sliderInput(
+                ns("rating"), "Opponent rating",
+                min = min(MAIA_RATINGS), max = max(MAIA_RATINGS),
+                value = 1500L, step = 100L, ticks = FALSE, sep = ""
+              )
             )
           ),
           uiOutput(ns("radar"))
