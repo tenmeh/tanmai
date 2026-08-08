@@ -11,32 +11,130 @@
   var boards = {}; // container id -> {board, game, stateInput, orientation}
   var pending = {}; // container id -> board-set message received before build
 
+  // Every position of the current line, from the game's starting position to
+  // its latest move. Derived by replaying rather than cached, so it cannot
+  // drift out of step with the game, and cheap enough at a few hundred plies
+  // that caching would be a premature optimisation.
+  //
+  // Replaying is also what keeps this working across chess.js versions: 1.x
+  // exposes `before`/`after` FENs on verbose history and 0.x does not, and the
+  // rest of this file already supports both.
+  function positionsOf(cid) {
+    var st = boards[cid];
+    var start = st.startFen || new window.ChessCtor().fen();
+    var fens = [start];
+    var walk;
+    try {
+      walk = new window.ChessCtor(start);
+    } catch (e) {
+      return [st.game.fen()];
+    }
+    var hist = st.game.history();
+    for (var i = 0; i < hist.length; i++) {
+      try {
+        walk.move(hist[i]);
+      } catch (e) {
+        break;
+      }
+      fens.push(walk.fen());
+    }
+    return fens;
+  }
+
+  function clampCursor(cid, fens) {
+    var st = boards[cid];
+    var last = fens.length - 1;
+    if (typeof st.cursor !== "number" || st.cursor > last || st.cursor < 0) {
+      st.cursor = last;
+    }
+    return st.cursor;
+  }
+
   function sendState(cid) {
     var st = boards[cid];
     if (!st) return;
     var g = st.game;
-    var verbose = g.history({ verbose: true });
+    var fens = positionsOf(cid);
+    var cursor = clampCursor(cid, fens);
+    var atEnd = cursor === fens.length - 1;
+    var viewFen = fens[cursor];
+    var history = g.history();
     var over = typeof g.isGameOver === "function" ? g.isGameOver() : g.game_over();
+
     Shiny.setInputValue(
       st.stateInput,
       {
-        fen: g.fen(),
-        turn: g.turn(),
-        history: g.history(),
-        last: verbose.length ? verbose[verbose.length - 1].san : null,
-        ply: verbose.length,
-        game_over: over,
+        // The position being *looked at*, not necessarily the latest one, so
+        // the engine analyses what the user can see. Rewinding is a way of
+        // asking "what did the engine think here", and it would be useless if
+        // the evaluation stayed pinned to the final position.
+        fen: viewFen,
+        turn: viewFen.split(" ")[1] || "w",
+        history: history,
+        last: cursor > 0 ? history[cursor - 1] : null,
+        ply: cursor,
+        plies: fens.length - 1,
+        at_start: cursor === 0,
+        at_end: atEnd,
+        // Only the live position can be finished; a rewound one always has a
+        // move available, namely the one that was actually played next.
+        game_over: atEnd && over,
         nonce: Math.random()
       },
       { priority: "event" }
     );
   }
 
+  // Show the position at `idx`, clamped to the line.
+  function goTo(cid, idx) {
+    var st = boards[cid];
+    if (!st) return;
+    var fens = positionsOf(cid);
+    st.cursor = Math.max(0, Math.min(idx, fens.length - 1));
+    clearSelection(cid);
+    st.board.position(fens[st.cursor]);
+    sendState(cid);
+  }
+
+  // Playing a move from a rewound position continues from there, discarding
+  // what followed - the behaviour of every analysis board, and the only one
+  // that makes "go back and try something else" work.
+  function truncateToCursor(cid) {
+    var st = boards[cid];
+    if (typeof st.cursor !== "number") return;
+    var guard = 0;
+    while (st.game.history().length > st.cursor && guard++ < 1024) {
+      st.game.undo();
+    }
+  }
+
+  // The game as it stands *at the cursor*. Interaction has to be answered from
+  // the position on screen, not the latest one: which side may be dragged,
+  // which squares a piece can reach, what is on a square. When the cursor is
+  // at the live end this returns the game itself, so nothing changes on the
+  // common path - including draw detection, which needs the move history a
+  // FEN cannot carry.
+  function activeGame(cid) {
+    var st = boards[cid];
+    var hist = st.game.history();
+    if (st.cursor === undefined || st.cursor === hist.length) return st.game;
+    var fens = positionsOf(cid);
+    try {
+      return new window.ChessCtor(fens[st.cursor]);
+    } catch (e) {
+      return st.game;
+    }
+  }
+
   function onDragStart(cid) {
     return function (source, piece) {
-      var g = boards[cid].game;
+      var st = boards[cid];
+      var g = activeGame(cid);
+      // Rewound positions are always playable: refusing here would make
+      // "go back and try something else" impossible after a finished game.
+      var atEnd = st.cursor === undefined || st.cursor === st.game.history().length;
       var over = typeof g.isGameOver === "function" ? g.isGameOver() : g.game_over();
-      if (over) return false;
+      if (atEnd && over) return false;
       // Only the side to move may be dragged.
       if (piece.search(new RegExp("^" + (g.turn() === "w" ? "b" : "w"))) !== -1) {
         return false;
@@ -49,12 +147,14 @@
   function tryMove(cid, from, to) {
     var st = boards[cid];
     var move = null;
+    truncateToCursor(cid);
     try {
       move = st.game.move({ from: from, to: to, promotion: "q" });
     } catch (e) {
       move = null; // chess.js 1.x throws on an illegal move
     }
     if (move === null) return false;
+    st.cursor = st.game.history().length;
     sendState(cid);
     return true;
   }
@@ -112,7 +212,7 @@
     // so this cannot disagree with what a move attempt will accept.
     var moves = [];
     try {
-      moves = st.game.moves({ square: square, verbose: true }) || [];
+      moves = activeGame(cid).moves({ square: square, verbose: true }) || [];
     } catch (e) {
       moves = [];
     }
@@ -123,7 +223,7 @@
   }
 
   function ownPieceAt(cid, square) {
-    var g = boards[cid].game;
+    var g = activeGame(cid);
     var p = null;
     try {
       p = g.get(square);
@@ -238,6 +338,11 @@
     boards[cid] = {
       board: board,
       game: game,
+      // Where this line begins. Not always the standard opening position - a
+      // recognised screenshot or a PGN with a [FEN] header starts elsewhere -
+      // so it has to be remembered rather than assumed.
+      startFen: game.fen(),
+      cursor: game.history().length,
       stateInput: msg.stateInput,
       orientation: msg.orientation || "white",
       selected: null,
@@ -400,6 +505,8 @@
       return;
     }
     st.game = game;
+    st.startFen = game.fen();
+    st.cursor = 0;
     // The selected piece may not exist in the new position, and the highlight
     // would survive onto whatever now sits on that square.
     clearSelection(msg.container);
@@ -431,9 +538,26 @@
   Shiny.addCustomMessageHandler("tanmai-board-undo", function (msg) {
     var st = boards[msg.container];
     if (!st) return;
+    truncateToCursor(msg.container);
     st.game.undo();
+    st.cursor = st.game.history().length;
     st.board.position(st.game.fen());
     sendState(msg.container);
+  });
+
+  // First / back / forward / last, the controls every analysis board has.
+  Shiny.addCustomMessageHandler("tanmai-board-nav", function (msg) {
+    var st = boards[msg.container];
+    if (!st) return;
+    var last = positionsOf(msg.container).length - 1;
+    var cursor = typeof st.cursor === "number" ? st.cursor : last;
+    var target =
+      msg.to === "first" ? 0
+      : msg.to === "last" ? last
+      : msg.to === "back" ? cursor - 1
+      : msg.to === "forward" ? cursor + 1
+      : cursor;
+    goTo(msg.container, target);
   });
 
   Shiny.addCustomMessageHandler("tanmai-board-flip", function (msg) {
@@ -452,6 +576,11 @@
     if (!st) return;
     var list = msg.ucis || msg.uci;
     if (!Array.isArray(list)) list = [list];
+    // A move arriving from the server is played from the position on screen,
+    // exactly as a dragged one is - so if the user has rewound, this continues
+    // the line from there rather than appending to a position they are no
+    // longer looking at.
+    truncateToCursor(msg.container);
     var played = 0;
     list.forEach(function (uci) {
       if (!uci) return;
@@ -465,6 +594,10 @@
       }
     });
     if (!played) return;
+    // Follow the move. Without this the cursor stays where it was, the state
+    // reported back describes an older position than the one now on the board,
+    // and the next request is computed from the wrong place.
+    st.cursor = st.game.history().length;
     st.board.position(st.game.fen());
     sendState(msg.container);
   });

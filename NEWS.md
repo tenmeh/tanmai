@@ -1,3 +1,29 @@
+# tanmai 1.5.0
+
+## New features
+
+* **Step through the line on the analysis board** - first, back, forward, last,
+  in the order and with the symbols every chess site uses, plus a `ply / total`
+  counter. Rewinding re-analyses the position you are looking at rather than
+  leaving the evaluation pinned to the latest move, because "what did the
+  engine think here" is the entire reason to go back.
+
+  Playing a move from a rewound position continues the line from there and
+  discards what followed, as any analysis board does. That is what makes
+  "go back and try something else" work.
+
+## Bug fixes
+
+* A move sent by the server - *Play best move*, or a move inferred from a
+  tracked game - now advances the board's cursor. It did not, so after the
+  first such move the state reported back described an older position than the
+  one on the board, and the next move was computed from the wrong place. Only
+  visible once there was a cursor to get wrong.
+
+* Dragging and tap-to-move now answer from the position on screen rather than
+  the latest one. While rewound they would otherwise offer the wrong side's
+  pieces and the wrong destination squares.
+
 # tanmai 1.4.0
 
 ## New features
