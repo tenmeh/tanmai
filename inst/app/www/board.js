@@ -10,6 +10,7 @@
 (function () {
   var boards = {}; // container id -> {board, game, stateInput, orientation}
   var pending = {}; // container id -> board-set message received before build
+  var lastTouched = null; // which board the keyboard should drive
 
   // Every position of the current line, from the game's starting position to
   // its latest move. Derived by replaying rather than cached, so it cannot
@@ -352,7 +353,14 @@
     // Delegated, so it survives chessboard.js rebuilding the squares on every
     // position change.
     var host = document.getElementById(cid);
-    if (host) host.addEventListener("click", onBoardClick(cid));
+    if (host) {
+      host.addEventListener("click", onBoardClick(cid));
+      // Keyboard navigation needs to know which board to drive when a
+      // page holds more than one.
+      host.addEventListener("mousedown", function () {
+        lastTouched = cid;
+      });
+    }
     window.addEventListener("resize", function () {
       board.resize();
       redrawArrows(cid);
@@ -476,6 +484,75 @@
   }
 
   // ---- Shiny message handlers -------------------------------------------
+  // ---- keyboard navigation ------------------------------------------------
+  // Left/right step, up/down (and Home/End) jump to the ends - the bindings
+  // every analysis site uses, so they need no explanation.
+  //
+  // Most of this is about *not* firing. Arrow keys already mean something in a
+  // text field and mean "scroll" everywhere else, so hijacking them globally
+  // would be worse than not having the feature.
+
+  function isTyping(el) {
+    if (!el) return false;
+    var tag = (el.tagName || "").toLowerCase();
+    return (
+      tag === "input" ||
+      tag === "textarea" ||
+      tag === "select" ||
+      el.isContentEditable === true
+    );
+  }
+
+  // The board to drive: the only one, or the last one touched. A board on a
+  // tab that is not showing has no offsetParent, and must not swallow the
+  // arrow keys the user is scrolling that tab with.
+  function keyboardTarget() {
+    var ids = Object.keys(boards).filter(function (cid) {
+      var host = document.getElementById(cid);
+      return host && host.offsetParent !== null;
+    });
+    if (!ids.length) return null;
+    if (ids.length === 1) return ids[0];
+    if (lastTouched && ids.indexOf(lastTouched) !== -1) return lastTouched;
+    return ids[0];
+  }
+
+  document.addEventListener("keydown", function (ev) {
+    // Ctrl/Cmd/Alt combinations belong to the browser.
+    if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+    if (isTyping(ev.target)) return;
+
+    var cid = keyboardTarget();
+    if (!cid) return;
+
+    var st = boards[cid];
+    var last = positionsOf(cid).length - 1;
+    var cursor = typeof st.cursor === "number" ? st.cursor : last;
+    var target;
+    switch (ev.key) {
+      case "ArrowLeft":
+        target = cursor - 1;
+        break;
+      case "ArrowRight":
+        target = cursor + 1;
+        break;
+      case "ArrowUp":
+      case "Home":
+        target = 0;
+        break;
+      case "ArrowDown":
+      case "End":
+        target = last;
+        break;
+      default:
+        return;
+    }
+    // Only now, once we know this keystroke is ours: otherwise the page would
+    // stop scrolling for keys we never handle.
+    ev.preventDefault();
+    goTo(cid, target);
+  });
+
   Shiny.addCustomMessageHandler("tanmai-board-create", function (msg) {
     // The container may not exist yet when the tab has never been shown.
     var tries = 0;

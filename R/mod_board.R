@@ -52,6 +52,12 @@ mod_board_ui <- function(id) {
           ),
           span(class = "cv-nav-ply", textOutput(ns("ply_label"), inline = TRUE))
         ),
+        # A keyboard shortcut nobody is told about is a keyboard shortcut
+        # nobody uses.
+        div(
+          class = "cv-nav-hint",
+          HTML("Keyboard: &#9664; &#9654; to step, &#9650; &#9660; for the ends")
+        ),
         div(
           class = "cv-board-controls",
           actionButton(ns("flip"), "Flip"),

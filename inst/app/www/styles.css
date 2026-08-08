@@ -373,6 +373,19 @@ body {
   padding-inline: 0.5rem;
 }
 
+.cv-nav-hint {
+  margin-top: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--bs-secondary-color, #8a8f98);
+}
+
+/* A touch device has no arrow keys to press, so the hint is only noise. */
+@media (hover: none) and (pointer: coarse) {
+  .cv-nav-hint {
+    display: none;
+  }
+}
+
 /* The counter must not resize the buttons as it counts past 9 and 99, so it
    is fixed-width and tabular. */
 .cv-nav-ply {

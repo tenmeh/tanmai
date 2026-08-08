@@ -12,6 +12,12 @@
   discards what followed, as any analysis board does. That is what makes
   "go back and try something else" work.
 
+  Also on the keyboard: left and right step, up and down (or Home and End) jump
+  to the ends. They stay out of the way where arrow keys already mean
+  something - while typing in a field, in combination with Ctrl, Cmd or Alt,
+  and while the board is on a tab that is not showing - and only suppress the
+  page's own scrolling for the keys they actually handle.
+
 ## Bug fixes
 
 * A move sent by the server - *Play best move*, or a move inferred from a
