@@ -352,6 +352,51 @@ body {
   flex-wrap: wrap;
 }
 
+/* ---- stepping through the line ----------------------------------------- */
+/* One joined cluster rather than four loose buttons, because they are one
+   control: the eye should land on the group and the arrows read as a strip. */
+.cv-board-nav {
+  margin-top: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.cv-board-nav .btn {
+  flex: 1 1 0;
+  min-width: 0;
+  /* Square-ish and finger-sized. These get pressed repeatedly, often on a
+     phone, so they are the one place worth spending width on. */
+  min-height: 2.5rem;
+  font-size: 0.95rem;
+  letter-spacing: 0.06em;
+  padding-inline: 0.5rem;
+}
+
+.cv-nav-hint {
+  margin-top: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--bs-secondary-color, #8a8f98);
+}
+
+/* A touch device has no arrow keys to press, so the hint is only noise. */
+@media (hover: none) and (pointer: coarse) {
+  .cv-nav-hint {
+    display: none;
+  }
+}
+
+/* The counter must not resize the buttons as it counts past 9 and 99, so it
+   is fixed-width and tabular. */
+.cv-nav-ply {
+  flex: 0 0 auto;
+  min-width: 4.5rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85rem;
+  color: var(--bs-secondary-color, #8a8f98);
+}
+
 /* ---- evaluation readout ------------------------------------------------ */
 
 .cv-eval-headline {
@@ -690,6 +735,9 @@ body {
   }
   .cv-board-controls .btn {
     flex: 1 1 auto;
+  }
+  .cv-board-nav .btn {
+    min-height: 2.75rem;
   }
 }
 

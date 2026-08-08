@@ -32,6 +32,32 @@ mod_board_ui <- function(id) {
           ),
           div(id = ns("board"), class = "cv-board")
         ),
+        # Stepping through the line, in the order and with the symbols every
+        # chess site uses - so nobody has to learn this board in particular.
+        # Labelled as well as drawn, because a bare glyph is not something a
+        # screen reader can announce.
+        div(
+          class = "cv-board-nav",
+          actionButton(ns("nav_first"), HTML("&#124;&#9664;"),
+            title = "First position", `aria-label` = "Go to first position"
+          ),
+          actionButton(ns("nav_back"), HTML("&#9664;"),
+            title = "Previous move", `aria-label` = "Go back one move"
+          ),
+          actionButton(ns("nav_forward"), HTML("&#9654;"),
+            title = "Next move", `aria-label` = "Go forward one move"
+          ),
+          actionButton(ns("nav_last"), HTML("&#9654;&#124;"),
+            title = "Latest position", `aria-label` = "Go to latest position"
+          ),
+          span(class = "cv-nav-ply", textOutput(ns("ply_label"), inline = TRUE))
+        ),
+        # A keyboard shortcut nobody is told about is a keyboard shortcut
+        # nobody uses.
+        div(
+          class = "cv-nav-hint",
+          HTML("Keyboard: &#9664; &#9654; to step, &#9650; &#9660; for the ends")
+        ),
         div(
           class = "cv-board-controls",
           actionButton(ns("flip"), "Flip"),
@@ -196,6 +222,31 @@ mod_board_server <- function(id, chess_ctx, incoming = reactive(NULL)) {
     observeEvent(input$undo, {
       session$sendCustomMessage("tanmai-board-undo", list(container = board_id))
     })
+
+    # Stepping through the line. The browser owns the move tree, so these only
+    # move its cursor; the position it reports back then drives the engine, so
+    # rewinding re-analyses what you are looking at rather than leaving the
+    # evaluation pinned to the latest move.
+    nav <- function(to) {
+      session$sendCustomMessage(
+        "tanmai-board-nav",
+        list(container = board_id, to = to)
+      )
+    }
+    observeEvent(input$nav_first, nav("first"))
+    observeEvent(input$nav_back, nav("back"))
+    observeEvent(input$nav_forward, nav("forward"))
+    observeEvent(input$nav_last, nav("last"))
+
+    output$ply_label <- renderText({
+      st <- board_state()
+      total <- st$plies %||% 0L
+      if (!total) {
+        return("")
+      }
+      sprintf("%d / %d", st$ply %||% 0L, total)
+    })
+    outputOptions(output, "ply_label", suspendWhenHidden = FALSE)
     observeEvent(input$reset, {
       session$sendCustomMessage("tanmai-board-set", list(
         container = board_id, fen = START_FEN, orientation = "white"
