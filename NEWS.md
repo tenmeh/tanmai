@@ -1,3 +1,28 @@
+# tanmai 1.3.2
+
+## Bug fixes
+
+* **Following a live game no longer grows without bound until the container is
+  killed.** Frames were sent on a fixed timer - one every 1.2 seconds by
+  default - while handling one takes longer than that: measured at 1.25 to 1.43
+  seconds for recognition alone, and 2.4 seconds end to end. Shiny is single
+  threaded, so the surplus queued up inside it and the backlog grew for as long
+  as the game went on. It looked like a memory leak and was really a producer
+  outrunning a consumer; profiling the recognition path over fifty frames shows
+  no growth at all once garbage collection is forced.
+
+  The browser now waits for the server to acknowledge a frame before sending
+  the next. The rate becomes self-adjusting - fast machines send often, slow
+  ones send less, and neither builds a queue - which matters because the right
+  interval depends on hardware nobody can predict, and a shared Cloud Run vCPU
+  running Stockfish and lc0 alongside is the slow case.
+
+  A frame skipped for this reason is not marked as seen, so it is picked up on
+  the next tick rather than lost, and the acknowledgement is sent however the
+  frame turns out - a frame that fails to decode still releases the latch.
+  If an acknowledgement never arrives at all, capture resumes after fifteen
+  seconds rather than wedging for the rest of the session.
+
 # tanmai 1.3.1
 
 ## Bug fixes
