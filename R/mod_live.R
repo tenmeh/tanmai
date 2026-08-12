@@ -433,6 +433,18 @@ mod_live_server <- function(id, chess_ctx) {
 
     observeEvent(input$frame, {
       req(input$frame$img)
+      # Tell the browser this frame is dealt with, so it can send the next one.
+      # It will not send another until it hears back (see capture.js), which is
+      # what stops frames queueing up faster than they can be handled - so this
+      # must fire however the frame turns out, including the early returns
+      # below. An ack that is skipped stops the capture dead.
+      on.exit(
+        session$sendCustomMessage(
+          "tanmai-capture-ack",
+          list(seq = input$frame$seq %||% 0)
+        ),
+        add = TRUE
+      )
       img <- tryCatch(decode_data_url_image(input$frame$img), error = function(e) NULL)
       if (is.null(img)) {
         return(note("invalid", "the captured frame could not be decoded"))

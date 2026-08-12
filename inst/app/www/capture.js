@@ -50,6 +50,11 @@
   // the server then discards. A false negative loses a move.
   var CHANGED = 0.8; // mean per-pixel luma delta counting as "something moved"
   var SETTLED = 1.0; // ...and below which the picture is holding still
+  // How long to wait for the server to acknowledge a frame before assuming the
+  // acknowledgement is never coming. Generous: recognition alone runs to well
+  // over a second, and a busy container can be slower still. The only cost of
+  // being wrong is one extra frame in flight.
+  var STUCK_MS = 15000;
 
   function el(id) {
     return document.getElementById(id);
@@ -196,6 +201,10 @@
     wg.drawImage(cap.video, r.x, r.y, r.w, r.h, 0, 0, WORK, WORK);
     var cur = luma(wg);
 
+    if (cap.inflight && Date.now() - cap.inflightSince > STUCK_MS) {
+      cap.inflight = false; // give up waiting rather than stop capturing
+    }
+
     var moving = meanDelta(cur, cap.prev);
     var novel = meanDelta(cur, cap.lastSent);
     cap.prev = cur;
@@ -204,6 +213,24 @@
     // board now would give a position that never existed.
     if (moving > SETTLED) return;
     if (novel < CHANGED) return;
+
+    // Backpressure. Recognition takes longer than the capture interval on any
+    // realistic board size - measured at 1.2-1.4s against a 1.2s default - so
+    // a fixed timer sends faster than the server can consume. Shiny is single
+    // threaded, the surplus frames queue up inside it, and the backlog grows
+    // without bound until the container is killed. It reads as a memory leak
+    // and is really a producer outrunning a consumer.
+    //
+    // Waiting for the acknowledgement makes the rate self-adjusting: fast
+    // machines send often, slow ones send less, and neither builds a queue.
+    // Deliberately placed *before* lastSent is updated, so a frame skipped
+    // this way still counts as novel and is picked up on the next tick rather
+    // than being lost.
+    if (cap.inflight) return;
+    cap.inflight = true;
+    // If an acknowledgement never arrives - a server-side error, a dropped
+    // websocket - capture must not wedge for the rest of the session.
+    cap.inflightSince = Date.now();
 
     cap.lastSent = cur;
     var s = Math.min(1, SEND_MAX / Math.max(r.w, r.h));
@@ -350,6 +377,13 @@
       }
     }
   });
+
+  // The server has finished with a frame and is ready for the next one.
+  if (window.Shiny && Shiny.addCustomMessageHandler) {
+    Shiny.addCustomMessageHandler("tanmai-capture-ack", function () {
+      if (cap) cap.inflight = false;
+    });
+  }
 
   // The interval slider takes effect without restarting the share.
   document.addEventListener("change", function (e) {
