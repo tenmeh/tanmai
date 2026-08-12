@@ -54,9 +54,17 @@ RUN meson setup build --buildtype=release \
     && ./build/lc0 --help > /dev/null
 
 # Maia weights, fetched here so the runtime stage needs no network access.
-# maia-1100/1500/1900 are the three networks the rating slider exposes.
+# Every network CSSLab published - 1100 to 1900 in hundreds - so each stop
+# on the rating slider is an actual trained model rather than the nearest
+# of three. They are about 7 MB each; the whole set is under 70 MB.
 ADD https://github.com/CSSLab/maia-chess/raw/master/maia_weights/maia-1100.pb.gz /weights/maia-1100.pb.gz
+ADD https://github.com/CSSLab/maia-chess/raw/master/maia_weights/maia-1200.pb.gz /weights/maia-1200.pb.gz
+ADD https://github.com/CSSLab/maia-chess/raw/master/maia_weights/maia-1300.pb.gz /weights/maia-1300.pb.gz
+ADD https://github.com/CSSLab/maia-chess/raw/master/maia_weights/maia-1400.pb.gz /weights/maia-1400.pb.gz
 ADD https://github.com/CSSLab/maia-chess/raw/master/maia_weights/maia-1500.pb.gz /weights/maia-1500.pb.gz
+ADD https://github.com/CSSLab/maia-chess/raw/master/maia_weights/maia-1600.pb.gz /weights/maia-1600.pb.gz
+ADD https://github.com/CSSLab/maia-chess/raw/master/maia_weights/maia-1700.pb.gz /weights/maia-1700.pb.gz
+ADD https://github.com/CSSLab/maia-chess/raw/master/maia_weights/maia-1800.pb.gz /weights/maia-1800.pb.gz
 ADD https://github.com/CSSLab/maia-chess/raw/master/maia_weights/maia-1900.pb.gz /weights/maia-1900.pb.gz
 
 # Widening the permissions is not cosmetic: ADD from a URL leaves files 0600
@@ -171,8 +179,9 @@ RUN Rscript -e "library(tanmai); \
       stopifnot(length(sets) >= 1); \
       message(sprintf('lc0: %s', tanmai:::find_lc0())); \
       stopifnot(!is.null(tanmai:::find_lc0())); \
-      for (r in tanmai:::MAIA_RATINGS) \
-        stopifnot(tanmai:::human_model_available(r)); \
+      w <- vapply(tanmai:::MAIA_RATINGS, tanmai:::maia_weights_path, character(1)); \
+      message(sprintf('maia networks baked in: %d/%d', sum(file.exists(w)), length(w))); \
+      stopifnot(all(file.exists(w))); \
       sess <- tanmai:::maia_session_start(1500); \
       stopifnot(!is.null(sess)); \
       pol <- tanmai:::human_move_probabilities(sess, \

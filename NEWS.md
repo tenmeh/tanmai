@@ -1,27 +1,69 @@
-# tanmai 1.3.2
+# tanmai 1.5.0
+
+## New features
+
+* **Step through the line on the analysis board** - first, back, forward, last,
+  in the order and with the symbols every chess site uses, plus a `ply / total`
+  counter. Rewinding re-analyses the position you are looking at rather than
+  leaving the evaluation pinned to the latest move, because "what did the
+  engine think here" is the entire reason to go back.
+
+  Playing a move from a rewound position continues the line from there and
+  discards what followed, as any analysis board does. That is what makes
+  "go back and try something else" work.
+
+  Also on the keyboard: left and right step, up and down (or Home and End) jump
+  to the ends. They stay out of the way where arrow keys already mean
+  something - while typing in a field, in combination with Ctrl, Cmd or Alt,
+  and while the board is on a tab that is not showing - and only suppress the
+  page's own scrolling for the keys they actually handle.
 
 ## Bug fixes
 
-* **Following a live game no longer grows without bound until the container is
-  killed.** Frames were sent on a fixed timer - one every 1.2 seconds by
-  default - while handling one takes longer than that: measured at 1.25 to 1.43
-  seconds for recognition alone, and 2.4 seconds end to end. Shiny is single
-  threaded, so the surplus queued up inside it and the backlog grew for as long
-  as the game went on. It looked like a memory leak and was really a producer
-  outrunning a consumer; profiling the recognition path over fifty frames shows
-  no growth at all once garbage collection is forced.
+* A move sent by the server - *Play best move*, or a move inferred from a
+  tracked game - now advances the board's cursor. It did not, so after the
+  first such move the state reported back described an older position than the
+  one on the board, and the next move was computed from the wrong place. Only
+  visible once there was a cursor to get wrong.
 
-  The browser now waits for the server to acknowledge a frame before sending
-  the next. The rate becomes self-adjusting - fast machines send often, slow
-  ones send less, and neither builds a queue - which matters because the right
-  interval depends on hardware nobody can predict, and a shared Cloud Run vCPU
-  running Stockfish and lc0 alongside is the slow case.
+* Dragging and tap-to-move now answer from the position on screen rather than
+  the latest one. While rewound they would otherwise offer the wrong side's
+  pieces and the wrong destination squares.
 
-  A frame skipped for this reason is not marked as seen, so it is picked up on
-  the next tick rather than lost, and the acknowledgement is sent however the
-  frame turns out - a frame that fails to decode still releases the latch.
-  If an acknowledgement never arrives at all, capture resumes after fifteen
-  seconds rather than wedging for the rest of the session.
+# tanmai 1.4.0
+
+## New features
+
+* **The opponent-rating slider now offers every hundred from 1100 to 1900**,
+  rather than three settings 400 points apart. Each stop is a real trained
+  network, not the nearest of a coarse few, so asking about a 1300 gets you a
+  model of a 1300.
+
+  The range itself cannot be widened: CSSLab trained Maia for 1100-1900 and
+  nothing outside it exists - `maia-1000` and `maia-2000` both 404. Verified
+  against the repository rather than assumed, and the bound is now stated in
+  the code so the next person does not go looking.
+
+* The Blunder Radar falls back to the nearest network it actually has, instead
+  of switching itself off. Deployed images bake in all nine, but a development
+  machine may hold only some, and modelling a 1300 as the 1400 you do have
+  beats declining to model a human at all.
+
+## Notes
+
+* The rating **estimator** deliberately keeps its three-network grid. Its
+  published accuracy - right about 75% of the time, 94% when it chooses to
+  speak - was measured over those three, and the rule producing those figures
+  wants 70% of the posterior on a single network. Adjacent Maia networks play
+  very similarly, so on a nine-way grid that mass spreads across neighbours and
+  the estimator would fall silent almost always: not because it knows less, but
+  because it is being asked a harder question than the one it was calibrated
+  for. Widening it needs a re-derived confidence rule and a fresh corpus.
+
+* The image build now asserts on the weight files directly. Checking
+  `human_model_available()` for each rating would have become vacuous once that
+  function learned to fall back, and a build check that cannot fail is worse
+  than none.
 
 # tanmai 1.3.1
 

@@ -4,7 +4,7 @@
 \alias{maia_pool_start}
 \title{Start one Maia session per rating}
 \usage{
-maia_pool_start(ratings = MAIA_RATINGS)
+maia_pool_start(ratings = MAIA_ESTIMATOR_RATINGS)
 }
 \arguments{
 \item{ratings}{Ratings to open sessions for.}

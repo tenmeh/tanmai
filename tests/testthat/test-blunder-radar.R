@@ -32,10 +32,26 @@ test_that("policy parsing survives output with no moves", {
 })
 
 test_that("a requested rating snaps to an available network", {
-  expect_equal(match_maia_rating(1100), 1100L)
-  expect_equal(match_maia_rating(1450), 1500L)
+  # Every hundred from 1100 to 1900 is a real trained network, so each stop on
+  # the slider maps to itself rather than to the nearest of a coarse few.
+  for (r in MAIA_RATINGS) expect_equal(match_maia_rating(r), r)
+  expect_equal(match_maia_rating(1437), 1400L)
+  expect_equal(match_maia_rating(1489), 1500L)
+
+  # Outside the range Maia was trained for, the nearest end is the honest
+  # answer - there is no maia-1000 or maia-2000 to fall back to.
+  expect_equal(match_maia_rating(400), 1100L)
   expect_equal(match_maia_rating(3000), 1900L)
+
   expect_equal(match_maia_rating(NA), 1500L)
+})
+
+test_that("the slider's grid and the estimator's grid are both real networks", {
+  # The two deliberately differ - the estimator's accuracy was calibrated on
+  # three networks - but neither may name a network that does not exist.
+  expect_true(all(MAIA_ESTIMATOR_RATINGS %in% MAIA_RATINGS))
+  expect_equal(MAIA_RATINGS, seq(1100L, 1900L, by = 100L))
+  expect_length(MAIA_RATINGS, 9L)
 })
 
 test_that("chess.js reports legal moves and the position after one", {

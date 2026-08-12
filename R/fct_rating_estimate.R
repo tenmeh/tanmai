@@ -39,7 +39,7 @@ MAIA_MIN_POLICY <- 1e-4
 #' @return A named list of sessions (names are the ratings), or `NULL` if any
 #'   of them could not be started - a partial pool would silently bias the
 #'   estimate towards whichever networks happened to load.
-maia_pool_start <- function(ratings = MAIA_RATINGS) {
+maia_pool_start <- function(ratings = MAIA_ESTIMATOR_RATINGS) {
   pool <- lapply(ratings, maia_session_start)
   names(pool) <- as.character(ratings)
   if (any(vapply(pool, is.null, logical(1)))) {

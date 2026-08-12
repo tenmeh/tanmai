@@ -7,7 +7,7 @@
 maia_weights_path(rating = 1500L)
 }
 \arguments{
-\item{rating}{One of 1100, 1500 or 1900.}
+\item{rating}{A rating with a Maia network: 1100 to 1900 in hundreds.}
 }
 \value{
 The expected weights path (which may not exist yet).

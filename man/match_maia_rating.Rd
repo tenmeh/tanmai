@@ -10,8 +10,9 @@ match_maia_rating(rating)
 \item{rating}{A numeric rating.}
 }
 \value{
-The closest rating for which a Maia network exists (1100, 1500 or
-1900); 1500 when \code{rating} is missing.
+The closest rating for which a Maia network exists - 1100 to 1900 in
+hundreds; 1500 when \code{rating} is missing. Ties go to the lower network,
+which only arises for exact multiples of fifty.
 }
 \description{
 Snap a requested rating to the nearest available Maia network
