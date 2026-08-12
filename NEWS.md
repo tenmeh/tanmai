@@ -1,3 +1,13 @@
+# tanmai 1.5.1
+
+## New features
+
+* **The same navigation from the keyboard.** Left and right step, up and down
+  (or Home and End) jump to the ends. They stay out of the way wherever arrow
+  keys already mean something - while typing in a field, in combination with
+  Ctrl, Cmd or Alt, and while the board is on a tab that is not showing - and
+  suppress the page's own scrolling only for the keys they actually handle.
+
 # tanmai 1.5.0
 
 ## New features
@@ -11,12 +21,6 @@
   Playing a move from a rewound position continues the line from there and
   discards what followed, as any analysis board does. That is what makes
   "go back and try something else" work.
-
-  Also on the keyboard: left and right step, up and down (or Home and End) jump
-  to the ends. They stay out of the way where arrow keys already mean
-  something - while typing in a field, in combination with Ctrl, Cmd or Alt,
-  and while the board is on a tab that is not showing - and only suppress the
-  page's own scrolling for the keys they actually handle.
 
 ## Bug fixes
 
@@ -64,6 +68,25 @@
   `human_model_available()` for each rating would have become vacuous once that
   function learned to fall back, and a build check that cannot fail is worse
   than none.
+
+# tanmai 1.3.2
+
+## Bug fixes
+
+* **Following a live game no longer grows until the container is killed.**
+  Frames were sent on a fixed timer - one every 1.2 seconds by default - while
+  handling one takes longer than that: 1.25 to 1.43 seconds for recognition
+  alone, and 2.4 seconds end to end. Shiny is single threaded, so the surplus
+  queued inside it and the backlog grew for as long as the game ran. It looked
+  like a memory leak and was a producer outrunning a consumer; profiling the
+  recognition path over fifty frames shows no growth once collection is forced.
+
+  The browser now waits for the server to acknowledge a frame before sending
+  the next, so the rate matches whatever the machine can manage. A frame
+  skipped this way is not marked as seen and is picked up on the next tick; the
+  acknowledgement is sent however the frame turns out, so one that fails to
+  decode still releases the latch; and if it never arrives, capture resumes
+  after fifteen seconds rather than wedging.
 
 # tanmai 1.3.1
 
