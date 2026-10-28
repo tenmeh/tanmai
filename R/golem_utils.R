@@ -24,9 +24,11 @@ golem_add_external_resources <- function() {
   # The same chess.js bundle the server uses via V8, served to the browser so
   # both sides agree on the rules.
   add_resource_path("chessjs", app_sys("js"))
-  # Cache-bust our own assets on every package version so an upgrade can't
+  # Cache-bust assets on version and file revision so local changes cannot
   # leave a browser running last version's CSS/JS against new markup.
-  v <- paste0("?v=", utils::packageVersion("tanmai"))
+  assets <- list.files(app_sys("app/www"), full.names = TRUE, pattern = "\\.(css|js)$")
+  revision <- as.numeric(max(file.info(assets)$mtime, na.rm = TRUE))
+  v <- paste0("?v=", utils::packageVersion("tanmai"), "-", revision)
   tags$head(
     tags$link(rel = "stylesheet", type = "text/css", href = "www/chessboard-1.0.0.min.css"),
     tags$link(rel = "stylesheet", type = "text/css", href = paste0("www/styles.css", v)),

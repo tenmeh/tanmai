@@ -380,7 +380,7 @@
 
   // The server has finished with a frame and is ready for the next one.
   if (window.Shiny && Shiny.addCustomMessageHandler) {
-    Shiny.addCustomMessageHandler("tanmai-capture-ack", function () {
+    Shiny.addCustomMessageHandler("tanmai-capture-ack", function (msg) {
       if (cap) cap.inflight = false;
     });
   }

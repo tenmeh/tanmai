@@ -6,6 +6,9 @@ app_server <- function(input, output, session) {
   # One chess.js (V8) context per session, reused across analyses/calibrations.
   chess_ctx <- new_chess_context()
 
+  mod_practice_server("learn", chess_ctx, mode = "learn")
+  mod_practice_server("play", chess_ctx, mode = "play")
+
   # Two things can put a position on the board: a screenshot just analysed, and
   # the live tracker following a game. Whichever spoke last wins - they are
   # both the user acting, and neither should be able to yank the board away

@@ -13,7 +13,7 @@ app_ui <- function(request) {
     title = cv_brand(),
     id = "main_tabs",
     theme = cv_theme(),
-    window_title = "Tanmai Chess - read a board, find the move",
+    window_title = "Tanmai Chess - learn, play, review",
     fillable = FALSE,
     # Stylesheets, the chessboard/chess.js bundles and the resource paths they
     # are served from. This has to hang off the page itself: `page_navbar()`
@@ -21,22 +21,21 @@ app_ui <- function(request) {
     # leaves every asset unloaded and the app renders as unstyled HTML.
     header = golem_add_external_resources(),
 
-    bslib::nav_panel(
-      "Analyse",
-      value = "analyze",
-      div(
-        class = "cv-page",
-        mod_analyze_ui("analyze"),
+    bslib::nav_panel("Learn", value = "learn",
+      div(class = "cv-page cv-workspace", mod_practice_ui("learn", "learn"))),
+    bslib::nav_panel("Play", value = "play",
+      div(class = "cv-page cv-workspace", mod_practice_ui("play", "play"))),
+    bslib::nav_panel("Review", value = "review",
+      div(class = "cv-page",
         mod_board_ui("board"),
-        mod_live_ui("live")
-      )
-    ),
-    bslib::nav_panel(
-      "Piece sets",
-      value = "calibrate",
-      div(class = "cv-page", mod_calibrate_ui("calibrate"))
-    ),
-
+        tags$details(class = "cv-settings cv-review-import", open = NA,
+          tags$summary("Import and review a game"),
+          mod_live_ui("live")),
+        tags$details(class = "cv-settings",
+          tags$summary("Read a position from a screenshot"),
+          mod_analyze_ui("analyze")))),
+    bslib::nav_panel("Settings", value = "calibrate",
+      div(class = "cv-page", mod_calibrate_ui("calibrate"))),
     bslib::nav_spacer(),
     bslib::nav_item(
       tags$a(

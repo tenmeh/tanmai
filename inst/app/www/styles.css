@@ -801,3 +801,51 @@ body {
   font-size: 0.8rem;
   line-height: 1.5;
 }
+
+/* --- Board-first learning workspace -------------------------------------- */
+.cv-workspace { max-width: 1320px; }
+.cv-practice { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 2.2rem; align-items: start; padding: .5rem 0 1rem; }
+.cv-practice-board-area { min-width: 0; }
+.cv-practice-topline, .cv-practice-board-footer { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.cv-practice-topline { padding: 0 0 .8rem; font-size: .85rem; color: var(--cv-ink-2); }
+.cv-eyebrow { font-size: .69rem; font-weight: 750; letter-spacing: .12em; color: var(--cv-ink-2); }
+.cv-practice-board-frame { padding: 8px; background: #263b32; border-radius: 10px; box-shadow: 0 12px 32px #15261c20; }
+.cv-practice-board-frame .cv-board { width: 100%; border-radius: 3px; }
+.cv-practice-board-footer { padding-top: .85rem; font-size: .8rem; color: var(--cv-ink-2); }
+.cv-task-panel { padding: 1.2rem 0; }
+.cv-task-panel h1 { font-size: 2rem; line-height: 1.12; letter-spacing: -.05em; margin: .55rem 0 .8rem; }
+.cv-task-panel h2 { font-size: 1.35rem; line-height: 1.2; margin: .4rem 0 .8rem; }
+.cv-task-panel h3 { font-size: 1rem; }
+.cv-task-intro { color: var(--cv-ink-2); margin-bottom: 1.4rem; }
+.cv-task-panel .shiny-input-container { width: 100%; }
+.cv-task-panel .cv-actions { flex-wrap: wrap; gap: .45rem; }
+.cv-task-panel .cv-actions .btn { font-size: .8rem; }
+.cv-task-feedback { min-height: 4.8rem; padding: .85rem 1rem; margin: 1rem 0; border-left: 3px solid var(--cv-accent); background: var(--cv-surface); font-size: .93rem; }
+.cv-lesson-number { font-size: .78rem; color: var(--cv-ink-2); }
+.cv-lesson-explanation { margin-top: 1.2rem; padding: 1rem; border: 1px solid var(--cv-line); border-radius: .5rem; }
+.cv-progress-card { border-top: 1px solid var(--cv-line); margin-top: 1.6rem; padding-top: 1rem; }
+.cv-progress-card .shiny-text-output { font-weight: 650; font-size: .88rem; margin: .5rem 0; }
+.cv-practice-moves { margin-top: 1rem; max-height: 140px; overflow: auto; line-height: 1.8; font-family: var(--bs-font-monospace); font-size: .85rem; }
+.cv-board-card .cv-board-layout { grid-template-columns: minmax(0, 1fr) 300px; }
+.cv-board-card .cv-board-wrap { max-width: none; }
+.cv-review-import { margin-top: 1.5rem; }
+@media (max-width: 900px) {
+  .cv-practice { grid-template-columns: minmax(0, 1fr) 290px; gap: 1.2rem; }
+  .cv-task-panel h1 { font-size: 1.7rem; }
+  .cv-board-card .cv-board-layout { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 700px) {
+  .cv-practice { display: flex; flex-direction: column; gap: .7rem; }
+  .cv-practice-board-area, .cv-task-panel { width: 100%; }
+  .cv-practice-topline { font-size: .74rem; }
+  .cv-practice-board-footer { font-size: .7rem; }
+  .cv-practice-board-frame { padding: 4px; }
+  .cv-task-panel { padding: .6rem 0; }
+  .cv-task-panel h1 { font-size: 1.65rem; }
+}
+
+/* Keep the whole board usable in a normal desktop window. */
+@media (min-width: 701px) {
+  .cv-practice-board-area { max-width: calc(100vh - 210px); justify-self: center; width: 100%; }
+}
+.cv-lesson-steps { padding-left: 1.2rem; color: var(--cv-ink-2); font-size: .8rem; line-height: 1.65; }
