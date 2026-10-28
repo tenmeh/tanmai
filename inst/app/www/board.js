@@ -60,6 +60,7 @@
     var atEnd = cursor === fens.length - 1;
     var viewFen = fens[cursor];
     var history = g.history();
+    var verbose = g.history({verbose: true}); var lastMove = verbose[cursor - 1];
     var over = typeof g.isGameOver === "function" ? g.isGameOver() : g.game_over();
 
     Shiny.setInputValue(
@@ -70,6 +71,10 @@
         // asking "what did the engine think here", and it would be useless if
         // the evaluation stayed pinned to the final position.
         fen: viewFen,
+        last_uci: lastMove ? lastMove.from + lastMove.to + (lastMove.promotion || "") : null,
+        last_before: cursor > 0 ? fens[cursor - 1] : null,
+        checkmate: typeof g.isCheckmate === "function" ? g.isCheckmate() : g.in_checkmate(),
+        pgn: g.pgn(),
         turn: viewFen.split(" ")[1] || "w",
         history: history,
         last: cursor > 0 ? history[cursor - 1] : null,
@@ -131,6 +136,7 @@
     return function (source, piece) {
       var st = boards[cid];
       var g = activeGame(cid);
+      if (st.locked || (st.side && g.turn() !== st.side)) return false;
       // Rewound positions are always playable: refusing here would make
       // "go back and try something else" impossible after a finished game.
       var atEnd = st.cursor === undefined || st.cursor === st.game.history().length;
@@ -148,6 +154,7 @@
   function tryMove(cid, from, to) {
     var st = boards[cid];
     var move = null;
+    if (st.locked || (st.side && activeGame(cid).turn() !== st.side)) return false;
     truncateToCursor(cid);
     try {
       move = st.game.move({ from: from, to: to, promotion: "q" });
@@ -241,7 +248,7 @@
   //     where no drag was ever started.
   function handleTap(cid, square) {
     var st = boards[cid];
-    if (!st) return;
+    if (!st || st.locked || (st.side && activeGame(cid).turn() !== st.side)) return;
 
     var over =
       typeof st.game.isGameOver === "function"
@@ -348,7 +355,8 @@
       orientation: msg.orientation || "white",
       selected: null,
       handledSquare: null,
-      handledAt: 0
+      handledAt: 0,
+      side: msg.side || null, locked: !!msg.locked, practice: !!msg.practice
     };
     // Delegated, so it survives chessboard.js rebuilding the squares on every
     // position change.
@@ -526,6 +534,7 @@
     if (!cid) return;
 
     var st = boards[cid];
+    if (st.practice) return;
     var last = positionsOf(cid).length - 1;
     var cursor = typeof st.cursor === "number" ? st.cursor : last;
     var target;
@@ -582,6 +591,8 @@
       return;
     }
     st.game = game;
+    if (msg.practice) {st.side = msg.side; st.locked = !!msg.locked; st.practice = true;}
+    drawArrows(msg.container, []);
     st.startFen = game.fen();
     st.cursor = 0;
     // The selected piece may not exist in the new position, and the highlight
@@ -611,6 +622,24 @@
   }
 
   Shiny.addCustomMessageHandler("tanmai-board-set", applySet);
+  Shiny.addCustomMessageHandler("tanmai-board-policy", function(msg) {
+    var st = boards[msg.container]; if (!st) return;
+    st.side = msg.side; st.locked = !!msg.locked; st.practice = !!msg.practice;
+    clearSelection(msg.container);
+  });
+  Shiny.addCustomMessageHandler("tanmai-progress-load", function(msg) {
+    var value = {completed:[], attempts:0, hints:0};
+    try {
+      var stored = JSON.parse(localStorage.getItem("tanmai-practice-v1"));
+      if (stored && typeof stored === "object" && !Array.isArray(stored)) value = stored;
+    }
+    catch(e) { value.storage_error = true; }
+    Shiny.setInputValue(msg.input, value, {priority:"event"});
+  });
+  Shiny.addCustomMessageHandler("tanmai-progress-save", function(msg) {
+    try { localStorage.setItem("tanmai-practice-v1", JSON.stringify(msg.value)); }
+    catch(e) { if (msg.input) Shiny.setInputValue(msg.input, Math.random(), {priority:"event"}); }
+  });
 
   Shiny.addCustomMessageHandler("tanmai-board-undo", function (msg) {
     var st = boards[msg.container];

@@ -1,3 +1,9 @@
+# tanmai (development)
+
+* Learn adds guided mini lessons with explained examples, practice for both colours, staged hints, and a browser-saved practice record.
+* Play adds untimed computer games with selectable challenge, style and side, plus PGN export.
+* The board leads Learn, Play and Review; screenshot imports and piece settings are secondary tools.
+
 # tanmai 1.5.1
 
 ## New features
