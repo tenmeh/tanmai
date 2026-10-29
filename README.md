@@ -305,6 +305,12 @@ Full documentation, including a walkthrough of the app and how the Blunder
 Radar and live tracking work:
 <https://tenmeh.github.io/tanmai/>
 
+## Support
+
+Tanmai is free and open source, and I work on it in my own time. If it
+helps you, you can
+[sponsor my work on GitHub](https://github.com/sponsors/tenmeh).
+
 ## Licence
 
 [AGPL-3.0](LICENSE). Use it, study it, change it, share it. If you distribute
