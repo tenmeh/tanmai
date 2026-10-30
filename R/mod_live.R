@@ -125,6 +125,7 @@ mod_live_ui <- function(id) {
           actionButton(ns("new_game"), "New game", class = "btn-primary"),
           actionButton(ns("resync"), "Re-anchor here")
         ),
+        uiOutput(ns("review_status")),
         uiOutput(ns("summary")),
         uiOutput(ns("graph")),
         div(class = "cv-live-moves", uiOutput(ns("moves"))),
@@ -143,10 +144,13 @@ mod_live_ui <- function(id) {
 #'
 #' @param id The module id.
 #' @param chess_ctx A chess.js V8 context from [new_chess_context()].
+#' @param incoming Optional reactive computer-game review request.
+#' @param engine_factory Engine constructor, injectable for offline tests.
 #' @return A reactive carrying a position for the interactive board: a list
 #'   with `fen`, `orientation`, `nonce` and, when a single move was inferred,
 #'   `uci` and `prev_fen` so the board can play it rather than jump.
-mod_live_server <- function(id, chess_ctx) {
+mod_live_server <- function(id, chess_ctx, incoming = reactive(NULL),
+                            engine_factory = engine_session_start) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
@@ -165,7 +169,7 @@ mod_live_server <- function(id, chess_ctx) {
 
     # Its own engine: the board's runs `go infinite`, and interrupting that to
     # score each move would reset its search on every move of the game.
-    scorer <- engine_session_start(multipv = 1L)
+    scorer <- engine_factory(multipv = 1L)
     session$onSessionEnded(function() engine_session_stop(scorer))
 
     # 38 piece sets is a few dozen RDS reads. Load once, not once per frame.
@@ -195,6 +199,7 @@ mod_live_server <- function(id, chess_ctx) {
     observeEvent(input$new_game, {
       pinned_flip(NULL)
       review(NULL)
+      loaded_pgn(NULL); score_failures(character())
       ledger(ledger()[0, ])
       if (identical(input$anchor, "start")) {
         g <- scored(game_new(CV_START_FEN, turn_pinned = TRUE))
@@ -222,34 +227,33 @@ mod_live_server <- function(id, chess_ctx) {
     # ---- importing a finished game ---------------------------------------
 
     pgn_note <- reactiveVal(NULL)
+    loaded_pgn <- reactiveVal(NULL)
+    score_failures <- reactiveVal(character())
 
-    observeEvent(input$load_pgn, {
-      res <- game_from_pgn(chess_ctx, input$pgn_text %||% "")
+    import_pgn <- function(text, orientation = "white") {
+      res <- game_from_pgn(chess_ctx, text)
       if (!is.null(res$error)) {
         pgn_note(list(ok = FALSE, text = res$error))
-        return()
+        return(FALSE)
       }
-
-      pinned_flip(NULL)
-      review(NULL)
+      pinned_flip(identical(orientation, "black"))
+      review(NULL); score_failures(character())
       ledger(ledger()[0, ])
-      # Deliberately not scored inline: an imported game arrives entirely
-      # unevaluated, and `scored()` takes only a budget's worth before handing
-      # the rest to the observer above. The board and the move list appear at
-      # once; the graph fills in behind them.
-      g <- scored(res$game)
-      game(g)
+      loaded_pgn(text)
+      game(res$game)
+      scoring_pending(!is.null(scorer))
       pgn_note(list(ok = TRUE, text = pgn_summary(res$headers, res$n_moves)))
       note("new", sprintf("imported %d plies from PGN", res$n_moves))
-      # Set the final position outright rather than replaying the game move by
-      # move. Playing them exists to keep the browser's move history in step
-      # when plies are appended to a game already on the board; an import
-      # replaces the board entirely, so there is nothing to stay in step with -
-      # and animating forty-five moves to arrive somewhere the user can reach
-      # by clicking any move in the list is just a delay.
-      push_board(g, NULL)
+      to_board(list(fen = game_current_fen(res$game), pgn = text,
+        orientation = orientation, nonce = stats::runif(1)))
+      TRUE
+    }
+    observeEvent(input$load_pgn, import_pgn(input$pgn_text %||% ""))
+    observeEvent(incoming(), {
+      request <- incoming()
+      req(request$pgn)
+      import_pgn(request$pgn, request$orientation %||% "white")
     })
-
     output$pgn_status <- renderUI({
       n <- pgn_note()
       if (is.null(n)) {
@@ -273,7 +277,7 @@ mod_live_server <- function(id, chess_ctx) {
     # would freeze the entire app for the duration - about eleven seconds for a
     # forty-move game. Capped, each pass is well under a second and the graph
     # fills in visibly while everything stays usable.
-    SCORE_BUDGET <- 6L
+    SCORE_BUDGET <- 3L
 
     #' Score up to `SCORE_BUDGET` unevaluated positions, oldest first.
     #'
@@ -283,21 +287,27 @@ mod_live_server <- function(id, chess_ctx) {
       if (is.null(g) || is.null(scorer)) {
         return(list(game = g, pending = FALSE))
       }
-      todo <- which(is.na(g$cp))
+      todo <- which(is.na(g$cp) & !g$fens %in% score_failures())
       if (!length(todo)) {
         return(list(game = g, pending = FALSE))
       }
       for (i in utils::head(todo, SCORE_BUDGET)) {
+        terminal <- review_terminal_score(chess_ctx, g$fens[i])
+        if (!is.na(terminal)) {g$cp[i] <- terminal; next}
         e <- tryCatch(engine_session_eval(scorer, g$fens[i], movetime_ms = 250L),
-          error = function(err) NULL
+          error = function(err) {
+            message("WARN code=ERR-REVIEW-001 ", conditionMessage(err)); NULL
+          }
         )
-        if (is.null(e) || is.na(e$cp)) next
+        if (is.null(e) || is.na(e$cp)) {
+          score_failures(union(score_failures(), g$fens[i])); next
+        }
         turn <- strsplit(g$fens[i], " ", fixed = TRUE)[[1]][2]
         # Store from White's point of view so the graph has one fixed meaning.
         g$cp[i] <- if (identical(turn, "b")) -e$cp else e$cp
         g$best[i] <- e$best
       }
-      list(game = g, pending = anyNA(g$cp))
+      list(game = g, pending = any(is.na(g$cp) & !g$fens %in% score_failures()))
     }
 
     # Whether positions are still waiting to be scored. Drives the observer
@@ -349,6 +359,7 @@ mod_live_server <- function(id, chess_ctx) {
     # ---- the ingestion path ----------------------------------------------
 
     ingest <- function(img) {
+      loaded_pgn(NULL)
       g <- game()
 
       # No game yet: this frame becomes the anchor. Orientation is whatever the
@@ -513,6 +524,12 @@ mod_live_server <- function(id, chess_ctx) {
     })
     outputOptions(output, "summary", suspendWhenHidden = FALSE)
 
+    output$review_status <- renderUI({
+      g <- game()
+      if (is.null(g)) return(p(class = "text-muted", "Open a game from Play, import a PGN, or start tracking a game."))
+      if (is.null(scorer)) return(p(class = "text-muted", "Engine unavailable. Move replay is ready; evaluations are not available."))
+      if (scoring_pending()) p(class = "text-muted", sprintf("Analysing positions: %d / %d. You can explore the move list now.", sum(!is.na(g$cp)), length(g$cp)))
+    })
     output$graph <- renderUI({
       g <- game()
       req(!is.null(g))
@@ -565,6 +582,7 @@ mod_live_server <- function(id, chess_ctx) {
       review(if (i == 0) NULL else i)
       to_board(list(
         fen = g$fens[max(1L, i)],
+        pgn = loaded_pgn(), ply = max(0L, i - 1L),
         orientation = if (isTRUE(pinned_flip())) "black" else "white",
         nonce = stats::runif(1)
       ))
@@ -577,7 +595,10 @@ mod_live_server <- function(id, chess_ctx) {
       if (!nrow(tp)) {
         return(tags$p(
           class = "text-muted",
-          if (game_ply(g)) "Nothing has gone badly wrong yet." else "Nothing to show yet."
+          if (is.null(scorer)) "Engine unavailable. Replay the game using the move list; evaluations are not available."
+          else if (isTRUE(scoring_pending())) "Analysing positions. Key moments will appear as evaluation finishes."
+          else if (length(score_failures())) "Some positions could not be analysed. Replay is available; missing evaluations are left blank."
+          else if (game_ply(g)) "No move lost a full pawn or more in this analysis. Explore any move below." else "Nothing to show yet."
         ))
       }
       rows <- lapply(seq_len(nrow(tp)), function(i) {

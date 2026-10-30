@@ -849,3 +849,52 @@ body {
   .cv-practice-board-area { max-width: calc(100vh - 210px); justify-self: center; width: 100%; }
 }
 .cv-lesson-steps { padding-left: 1.2rem; color: var(--cv-ink-2); font-size: .8rem; line-height: 1.65; }
+
+/* Shared blue board palette and interaction feedback across every mode. */
+.cv-board .white-1e1d7 { background-color: #d8e9f3; color: #294d68; }
+.cv-board .black-3c85d { background-color: #668fae; color: #eff7fc; }
+.cv-board .board-b72b1 { border-color: #304e69; }
+.cv-practice-board-frame {
+  background: #29465f;
+  box-shadow: 0 12px 32px #10283d26;
+}
+.cv-board [data-square].cv-sq-selected {
+  box-shadow: inset 0 0 0 4px #f7d16b;
+}
+.cv-board [data-square].cv-sq-target::after {
+  background: #163e64;
+  opacity: .72;
+}
+.cv-board [data-square].cv-sq-capture::after {
+  content: "";
+  position: absolute;
+  inset: 6%;
+  width: 88%;
+  height: 88%;
+  transform: none;
+  border-radius: 50%;
+  background: transparent;
+  border: 4px solid #e7b24b;
+  opacity: .95;
+  pointer-events: none;
+}
+.cv-board [data-square].cv-sq-last {
+  background-image: linear-gradient(#f5d56c50, #f5d56c50);
+}
+.cv-board [data-square].cv-sq-check {
+  background-image: radial-gradient(circle, #f16b6380 5%, #c93b3260 55%, transparent 78%);
+  box-shadow: inset 0 0 0 3px #c23732;
+}
+.cv-board.cv-checkmate .cv-sq-check {
+  animation: cv-mate-finish 900ms ease-out 1;
+}
+@keyframes cv-mate-finish {
+  0% { box-shadow: inset 0 0 0 3px #c23732; }
+  45% { box-shadow: inset 0 0 0 7px #f1c35b, inset 0 0 24px #e9b94a; }
+  100% { box-shadow: inset 0 0 0 3px #c23732; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cv-board.cv-checkmate .cv-sq-check { animation: none; }
+}
+.cv-puzzle-filters { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; }
+.cv-support-link { white-space: nowrap; }

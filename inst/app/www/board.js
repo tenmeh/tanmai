@@ -51,7 +51,7 @@
     return st.cursor;
   }
 
-  function sendState(cid) {
+  function sendState(cid, animateMate) {
     var st = boards[cid];
     if (!st) return;
     var g = st.game;
@@ -59,6 +59,7 @@
     var cursor = clampCursor(cid, fens);
     var atEnd = cursor === fens.length - 1;
     var viewFen = fens[cursor];
+    renderPositionStatus(cid, !!animateMate);
     var history = g.history();
     var verbose = g.history({verbose: true}); var lastMove = verbose[cursor - 1];
     var over = typeof g.isGameOver === "function" ? g.isGameOver() : g.game_over();
@@ -146,6 +147,11 @@
       if (piece.search(new RegExp("^" + (g.turn() === "w" ? "b" : "w"))) !== -1) {
         return false;
       }
+      // Drag previews show every legal move, independent of lesson solutions.
+      var selected = st.selected;
+      selectSquare(cid, source);
+      st.selected = selected;
+      return true;
     };
   }
 
@@ -163,7 +169,7 @@
     }
     if (move === null) return false;
     st.cursor = st.game.history().length;
-    sendState(cid);
+    sendState(cid, true);
     return true;
   }
 
@@ -177,6 +183,9 @@
       // a `click` is the whole trick: on a piece, chessboard.js starts a drag
       // the moment you press, and the click that follows arrives after this.
       if (target === source) {
+        var previousSelection = st.selected;
+        clearSelection(cid);
+        st.selected = previousSelection;
         handleTap(cid, source);
         noteHandled(cid, source);
         return "snapback";
@@ -199,11 +208,51 @@
     if (!st) return;
     var host = document.getElementById(cid);
     if (host) {
-      host.querySelectorAll(".cv-sq-selected, .cv-sq-target").forEach(function (e) {
-        e.classList.remove("cv-sq-selected", "cv-sq-target");
+      host.querySelectorAll(".cv-sq-selected, .cv-sq-target, .cv-sq-capture").forEach(function (e) {
+        e.classList.remove("cv-sq-selected", "cv-sq-target", "cv-sq-capture");
       });
     }
     st.selected = null;
+  }
+
+  // Position feedback is derived from the position on screen, including replay.
+  // Animation is reserved for actual moves, never a load, sync or navigation.
+  function renderPositionStatus(cid, animateMate) {
+    var st = boards[cid], host = document.getElementById(cid);
+    if (!st || !host) return;
+    var g = activeGame(cid), check = g.isCheck(), mate = g.isCheckmate();
+    host.querySelectorAll(".cv-sq-check, .cv-sq-last").forEach(function(el) {
+      el.classList.remove("cv-sq-check", "cv-sq-last");
+    });
+    var hist = st.game.history({verbose:true}), last = hist[st.cursor - 1];
+    if (last) [last.from, last.to].forEach(function(square) {
+      var cell = host.querySelector('[data-square="'+square+'"]');
+      if (cell) cell.classList.add("cv-sq-last");
+    });
+    if (check) host.querySelectorAll("[data-square]").forEach(function(cell) {
+      var piece = g.get(cell.getAttribute("data-square"));
+      if (piece && piece.type === "k" && piece.color === g.turn()) cell.classList.add("cv-sq-check");
+    });
+    var status = mate ? "Checkmate." : g.isDraw() ? "Draw." : check ? "Check." : "";
+    var label = status + (g.isGameOver() ? "" : (g.turn() === "w" ? " White to move." : " Black to move."));
+    host.setAttribute("role", "group");
+    host.setAttribute("aria-label", "Chessboard. " + label);
+    if (!st.announcement) {
+      st.announcement = document.createElement("span");
+      st.announcement.className = "visually-hidden";
+      st.announcement.setAttribute("aria-live", "polite");
+      host.appendChild(st.announcement);
+    }
+    if (st.announcement.textContent !== label) st.announcement.textContent = label;
+    if (!mate) host.classList.remove("cv-checkmate");
+    if (mate && animateMate && st.lastMateFen !== g.fen()) {
+      st.lastMateFen = g.fen();
+      var reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (!reduced) {
+        host.classList.add("cv-checkmate");
+        setTimeout(function() {host.classList.remove("cv-checkmate");}, 950);
+      }
+    }
   }
 
   function selectSquare(cid, square) {
@@ -226,7 +275,7 @@
     }
     moves.forEach(function (m) {
       var el = host.querySelector('[data-square="' + m.to + '"]');
-      if (el) el.classList.add("cv-sq-target");
+      if (el) el.classList.add(m.captured ? "cv-sq-capture" : "cv-sq-target");
     });
   }
 
@@ -317,6 +366,7 @@
   function onSnapEnd(cid) {
     return function () {
       boards[cid].board.position(boards[cid].game.fen());
+      renderPositionStatus(cid, false);
     };
   }
 
@@ -585,6 +635,7 @@
     var game;
     try {
       game = new window.ChessCtor(msg.fen);
+      if (msg.pgn) game.loadPgn(msg.pgn);
     } catch (e) {
       // A structurally illegal FEN (see build()); ignore rather than break
       // an otherwise-working board.
@@ -593,12 +644,16 @@
     st.game = game;
     if (msg.practice) {st.side = msg.side; st.locked = !!msg.locked; st.practice = true;}
     drawArrows(msg.container, []);
-    st.startFen = game.fen();
-    st.cursor = 0;
+    var origin = new window.ChessCtor(game.fen());
+    if (msg.pgn) {origin.loadPgn(msg.pgn); while (origin.undo()) {}}
+    st.startFen = origin.fen();
+    st.cursor = msg.pgn ? game.history().length : 0;
+    if (typeof msg.ply === "number") st.cursor = Math.max(0, Math.min(msg.ply, st.cursor));
+    st.lastMateFen = null;
     // The selected piece may not exist in the new position, and the highlight
     // would survive onto whatever now sits on that square.
     clearSelection(msg.container);
-    st.board.position(msg.fen, false);
+    st.board.position(positionsOf(msg.container)[st.cursor], false);
     if (msg.orientation && msg.orientation !== st.orientation) {
       st.orientation = msg.orientation;
       st.board.orientation(msg.orientation);
@@ -622,6 +677,7 @@
   }
 
   Shiny.addCustomMessageHandler("tanmai-board-set", applySet);
+  Shiny.addCustomMessageHandler("tanmai-board-sync", function(msg) {sendState(msg.container);});
   Shiny.addCustomMessageHandler("tanmai-board-policy", function(msg) {
     var st = boards[msg.container]; if (!st) return;
     st.side = msg.side; st.locked = !!msg.locked; st.practice = !!msg.practice;
@@ -669,9 +725,11 @@
   Shiny.addCustomMessageHandler("tanmai-board-flip", function (msg) {
     var st = boards[msg.container];
     if (!st) return;
+    clearSelection(msg.container);
     st.board.flip();
     st.orientation = st.board.orientation();
     redrawArrows(msg.container);
+    renderPositionStatus(msg.container, false);
   });
 
   // Accepts one move or several. The live tracker sends several when it had to
@@ -704,8 +762,9 @@
     // reported back describes an older position than the one now on the board,
     // and the next request is computed from the wrong place.
     st.cursor = st.game.history().length;
+    clearSelection(msg.container);
     st.board.position(st.game.fen());
-    sendState(msg.container);
+    sendState(msg.container, true);
   });
 
   Shiny.addCustomMessageHandler("tanmai-board-arrows", function (msg) {
