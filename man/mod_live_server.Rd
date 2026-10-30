@@ -4,12 +4,21 @@
 \alias{mod_live_server}
 \title{Live game tracking server}
 \usage{
-mod_live_server(id, chess_ctx)
+mod_live_server(
+  id,
+  chess_ctx,
+  incoming = reactive(NULL),
+  engine_factory = engine_session_start
+)
 }
 \arguments{
 \item{id}{The module id.}
 
 \item{chess_ctx}{A chess.js V8 context from \code{\link[=new_chess_context]{new_chess_context()}}.}
+
+\item{incoming}{Optional reactive computer-game review request.}
+
+\item{engine_factory}{Engine constructor, injectable for offline tests.}
 }
 \value{
 A reactive carrying a position for the interactive board: a list

@@ -47,7 +47,7 @@ mod_practice_ui <- function(id, mode = "learn") {
         div(class = "cv-task-feedback", `aria-live` = "polite", textOutput(ns("feedback"))),
         textOutput(ns("opponent")),
         downloadButton(ns("pgn"), "Save game as PGN", class = "btn-sm"),
-        p(class = "small text-muted", "Import the saved PGN in Review to explore your game.")
+        uiOutput(ns("game_actions"))
       )
     )
   )
@@ -76,6 +76,10 @@ mod_practice_server <- function(id, chess_ctx, mode = "learn") {
     game_settings <- reactiveVal(NULL)
     engine <- NULL
     thinking <- reactiveVal(NULL)
+    paused <- reactiveVal(FALSE)
+    review_request <- reactiveVal(NULL)
+    review_sequence <- 0L
+    game_sequence <- 0L
     last_event <- reactiveVal(NULL)
     session$onSessionEnded(function() engine_session_stop(engine))
 
@@ -192,10 +196,11 @@ mod_practice_server <- function(id, chess_ctx, mode = "learn") {
         progress(p); save_progress()
       })
     } else {
-      observeEvent(input$new_game, {
-        thinking(NULL)
+      start_game <- function(settings) {
+        game_sequence <<- game_sequence + 1L
+        settings$game_id <- game_sequence
+        thinking(NULL); paused(FALSE)
         engine_session_stop(engine); engine <<- NULL
-        settings <- list(strength = input$strength, style = input$style, side = input$side)
         local <- find_local_engine()
         if (!is.null(local)) engine <<- engine_session_start(multipv = 5L, engine_path = local)
         if (!is.null(engine)) engine$process$write_input(sprintf("setoption name Skill Level value %d\n", c(casual = 0L, club = 6L, challenging = 14L)[settings$strength]))
@@ -203,6 +208,44 @@ mod_practice_server <- function(id, chess_ctx, mode = "learn") {
         game_settings(settings); last_event(NULL)
         feedback(if (settings$side == "w") "You are White. Make your first move." else "You are Black. The computer moves first.")
         set_board(CV_START_FEN, side = settings$side)
+      }
+      observeEvent(input$new_game, start_game(list(
+        strength = input$strength, style = input$style, side = input$side)))
+      observeEvent(input$rematch, {
+        req(game_settings())
+        start_game(game_settings())
+      })
+      observeEvent(input$review_game, {
+        request <- play_review_snapshot(chess_ctx, input$state, game_settings())
+        if (!is.null(request$error)) {feedback(request$error); return()}
+        paused(TRUE); thinking(NULL)
+        if (!is.null(engine)) try(engine$process$write_input("stop\n"), silent = TRUE)
+        policy(side = game_settings()$side, locked = TRUE)
+        review_sequence <<- review_sequence + 1L
+        request$nonce <- review_sequence
+        review_request(request)
+        feedback(if (request$finished) "Your game is ready in Review." else "Game paused for review. Resume here when you are ready.")
+      }, priority = 100)
+      observeEvent(input$resume, {
+        req(game_settings(), !isTRUE(input$state$game_over))
+        paused(FALSE); last_event(NULL)
+        policy(side = game_settings()$side)
+        feedback("Game resumed. Take your time.")
+        session$sendCustomMessage("tanmai-board-sync", list(container = ns("board")))
+      })
+      output$game_actions <- renderUI({
+        st <- input$state
+        if (is.null(game_settings()) || !length(st$history)) {
+          return(p(class = "small text-muted", "After your first move, you can pause and review this game directly."))
+        }
+        finished <- isTRUE(st$game_over)
+        div(class = "cv-subpanel",
+          h3(if (finished) "Game complete" else if (paused()) "Game paused" else "Explore your game"),
+          p(if (finished) "Review the key moments, or play the same opponent again." else "Pause and review the moves played so far. Your game stays here."),
+          div(class = "cv-actions",
+            actionButton(ns("review_game"), if (finished) "Review game" else "Pause and review", class = "btn-primary"),
+            if (paused() && !finished) actionButton(ns("resume"), "Resume game"),
+            if (finished) actionButton(ns("rematch"), "Rematch")))
       })
       play_reply <- function(fen, move) {
         if (is.null(move) || !move %in% legal_moves(chess_ctx, fen)) {
@@ -213,12 +256,12 @@ mod_practice_server <- function(id, chess_ctx, mode = "learn") {
         feedback("Your turn. Take your time.")
       }
       observeEvent(input$state, {
-        st <- input$state; settings <- game_settings(); req(settings)
+        st <- input$state; settings <- game_settings(); req(settings, !paused())
         if (isTRUE(st$game_over)) {
           thinking(NULL); policy(locked = TRUE)
           feedback(if (isTRUE(st$checkmate)) {
-            if (st$turn == settings$side) "Checkmate. The computer wins. Save the game to review it." else "Checkmate. You win. Save the game to review it."
-          } else "Game drawn. Save the game to review it.")
+            if (st$turn == settings$side) "Checkmate. The computer wins. Select Review game to explore it." else "Checkmate. You win. Select Review game to explore it."
+          } else "Game drawn. Select Review game to explore it.")
           return()
         }
         req(identical(st$turn, if (settings$side == "w") "b" else "w"))
@@ -239,7 +282,7 @@ mod_practice_server <- function(id, chess_ctx, mode = "learn") {
         }
       })
       observe({
-        pending <- thinking(); req(pending)
+        pending <- thinking(); req(pending, !paused())
         invalidateLater(100, session)
         settings <- game_settings()
         elapsed <- as.numeric(difftime(Sys.time(), pending$start, units = "secs"))
@@ -310,6 +353,7 @@ mod_practice_server <- function(id, chess_ctx, mode = "learn") {
       if (!length(moves)) return("Your moves will appear here.")
       paste(vapply(seq_along(moves), function(i) paste0(if (i %% 2L == 1L) paste0((i + 1L) %/% 2L, ". ") else "", moves[[i]]), character(1)), collapse = " ")
     })
-    reactive(list(lesson = current(), stage = stage(), solved = solved(), progress = progress(), settings = game_settings(), feedback = feedback()))
+    reactive(list(lesson = current(), stage = stage(), solved = solved(), progress = progress(), settings = game_settings(), feedback = feedback(),
+      paused = paused(), review_request = review_request()))
   })
 }

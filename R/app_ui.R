@@ -23,10 +23,13 @@ app_ui <- function(request) {
 
     bslib::nav_panel("Learn", value = "learn",
       div(class = "cv-page cv-workspace", mod_practice_ui("learn", "learn"))),
+    bslib::nav_panel("Puzzles", value = "puzzles",
+      div(class = "cv-page cv-workspace", mod_puzzles_ui("puzzles"))),
     bslib::nav_panel("Play", value = "play",
       div(class = "cv-page cv-workspace", mod_practice_ui("play", "play"))),
     bslib::nav_panel("Review", value = "review",
       div(class = "cv-page",
+        uiOutput("review_context"),
         mod_board_ui("board"),
         tags$details(class = "cv-settings cv-review-import", open = NA,
           tags$summary("Import and review a game"),
@@ -37,6 +40,9 @@ app_ui <- function(request) {
     bslib::nav_panel("Settings", value = "calibrate",
       div(class = "cv-page", mod_calibrate_ui("calibrate"))),
     bslib::nav_spacer(),
+    bslib::nav_item(tags$a(class = "cv-navlink cv-support-link",
+      href = "https://github.com/sponsors/tenmeh", target = "_blank",
+      rel = "noopener noreferrer", "Support Tanmai")),
     bslib::nav_item(
       tags$a(
         class = "cv-navlink",

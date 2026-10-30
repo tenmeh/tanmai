@@ -1,5 +1,12 @@
 # tanmai (development)
 
+* Puzzles adds eight composed positions with theme and difficulty filters, hints,
+  retries, and guided replies.
+* Computer games open directly in Review with full move history and player side,
+  plus pause, resume, and post-game rematch controls.
+* Boards use blue squares, legal drag destinations, capture rings, checked-king
+  highlights, and a brief checkmate effect that respects reduced motion.
+* The app navigation links to the existing GitHub Sponsors page.
 * Learn adds guided mini lessons with explained examples, practice for both colours, staged hints, and a browser-saved practice record.
 * Play adds untimed computer games with selectable challenge, style and side, plus PGN export.
 * The board leads Learn, Play and Review; screenshot imports and piece settings are secondary tools.

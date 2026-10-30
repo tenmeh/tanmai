@@ -200,6 +200,12 @@ mod_board_server <- function(id, chess_ctx, incoming = reactive(NULL)) {
       # it: the piece slides, and the browser's own history stays in step so
       # Undo and the move list keep working. Otherwise fall back to setting the
       # position outright.
+      if (is.list(msg) && !is.null(msg$pgn)) {
+        session$sendCustomMessage("tanmai-board-set", list(
+          container = board_id, fen = fen, pgn = msg$pgn, ply = msg$ply,
+          orientation = msg$orientation %||% "white"))
+        return()
+      }
       ucis <- if (is.list(msg)) msg$ucis %||% msg$uci else NULL
       if (!is.null(ucis) && !is.null(msg$prev_fen) &&
         same_position(isolate(current_fen()), msg$prev_fen)) {
