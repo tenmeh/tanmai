@@ -12,6 +12,7 @@ app_ui <- function(request) {
   bslib::page_navbar(
     title = cv_brand(),
     id = "main_tabs",
+    selected = "play",
     theme = cv_theme(),
     window_title = "Tanmai Chess - learn, play, review",
     fillable = FALSE,
@@ -21,12 +22,12 @@ app_ui <- function(request) {
     # leaves every asset unloaded and the app renders as unstyled HTML.
     header = golem_add_external_resources(),
 
+    bslib::nav_panel("Play", value = "play",
+      div(class = "cv-page cv-workspace", mod_practice_ui("play", "play"))),
     bslib::nav_panel("Learn", value = "learn",
       div(class = "cv-page cv-workspace", mod_practice_ui("learn", "learn"))),
     bslib::nav_panel("Puzzles", value = "puzzles",
       div(class = "cv-page cv-workspace", mod_puzzles_ui("puzzles"))),
-    bslib::nav_panel("Play", value = "play",
-      div(class = "cv-page cv-workspace", mod_practice_ui("play", "play"))),
     bslib::nav_panel("Review", value = "review",
       div(class = "cv-page",
         uiOutput("review_context"),
