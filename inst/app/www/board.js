@@ -51,7 +51,7 @@
     return st.cursor;
   }
 
-  function sendState(cid, animateMate) {
+  function sendState(cid, animateMate, undoAck) {
     var st = boards[cid];
     if (!st) return;
     var g = st.game;
@@ -72,6 +72,9 @@
         // asking "what did the engine think here", and it would be useless if
         // the evaluation stayed pinned to the final position.
         fen: viewFen,
+        revision: st.revision,
+        undo_ack: undoAck || null,
+        can_undo: !!st.side && verbose.some(function(m) {return m.color === st.side;}),
         last_uci: lastMove ? lastMove.from + lastMove.to + (lastMove.promotion || "") : null,
         last_before: cursor > 0 ? fens[cursor - 1] : null,
         checkmate: typeof g.isCheckmate === "function" ? g.isCheckmate() : g.in_checkmate(),
@@ -169,6 +172,7 @@
     }
     if (move === null) return false;
     st.cursor = st.game.history().length;
+    st.revision++;
     sendState(cid, true);
     return true;
   }
@@ -401,6 +405,7 @@
       // so it has to be remembered rather than assumed.
       startFen: game.fen(),
       cursor: game.history().length,
+      revision: 0,
       stateInput: msg.stateInput,
       orientation: msg.orientation || "white",
       selected: null,
@@ -642,6 +647,7 @@
       return;
     }
     st.game = game;
+    st.revision++;
     if (msg.practice) {st.side = msg.side; st.locked = !!msg.locked; st.practice = true;}
     drawArrows(msg.container, []);
     var origin = new window.ChessCtor(game.fen());
@@ -702,9 +708,39 @@
     if (!st) return;
     truncateToCursor(msg.container);
     st.game.undo();
+    st.revision++;
     st.cursor = st.game.history().length;
     st.board.position(st.game.fen());
     sendState(msg.container);
+  });
+
+  // Undo to the player's last decision, using chess.js history so PGN,
+  // castling rights, captures and promotion are restored together.
+  Shiny.addCustomMessageHandler("tanmai-play-undo", function(msg) {
+    var st = boards[msg.container]; if (!st) return;
+    st.side = msg.side; st.locked = !!msg.locked;
+    var history = st.game.history({verbose:true}), own = -1;
+    for (var i=history.length-1; i>=0; i--) {
+      if (history[i].color === msg.side) {own=i; break;}
+    }
+    if (own < 0) {
+      sendState(msg.container, false, {request:msg.request, undone:false});
+      return;
+    }
+    while (st.game.history().length > own) st.game.undo();
+    var headers = typeof st.game.getHeaders === "function" ? st.game.getHeaders() : st.game.header();
+    if (headers.Result && headers.Result !== "*") {
+      if (typeof st.game.setHeader === "function") st.game.setHeader("Result", "*");
+      else st.game.header("Result", "*");
+    }
+    st.revision++;
+    st.cursor = st.game.history().length;
+    st.side = msg.side; st.locked = !!msg.locked;
+    st.lastMateFen = null;
+    clearSelection(msg.container);
+    drawArrows(msg.container, []);
+    st.board.position(st.game.fen(), false);
+    sendState(msg.container, false, {request:msg.request, undone:true});
   });
 
   // First / back / forward / last, the controls every analysis board has.
@@ -738,6 +774,8 @@
   Shiny.addCustomMessageHandler("tanmai-board-move", function (msg) {
     var st = boards[msg.container];
     if (!st) return;
+    if (msg.expectedFen && st.game.fen() !== msg.expectedFen) return;
+    if (typeof msg.expectedRevision === "number" && st.revision !== msg.expectedRevision) return;
     var list = msg.ucis || msg.uci;
     if (!Array.isArray(list)) list = [list];
     // A move arriving from the server is played from the position on screen,
@@ -758,6 +796,7 @@
       }
     });
     if (!played) return;
+    st.revision++;
     // Follow the move. Without this the cursor stays where it was, the state
     // reported back describes an older position than the one now on the board,
     // and the next request is computed from the wrong place.

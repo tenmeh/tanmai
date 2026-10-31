@@ -13,7 +13,9 @@ mod_practice_ui <- function(id, mode = "learn") {
       div(class = "cv-practice-board-frame", div(id = ns("board"), class = "cv-board")),
       div(class = "cv-practice-board-footer",
         span("Tap a piece, then a square. Or drag to move."),
-        actionButton(ns("flip"), "Flip board", class = "btn-sm")),
+        div(class = "cv-actions",
+          if (mode == "play") uiOutput(ns("undo_control"), inline = TRUE),
+          actionButton(ns("flip"), "Flip board", class = "btn-sm"))),
       if (mode == "play") div(class = "cv-practice-moves", textOutput(ns("moves")))
     ),
     tags$aside(class = "cv-task-panel",
@@ -76,6 +78,8 @@ mod_practice_server <- function(id, chess_ctx, mode = "learn") {
     game_settings <- reactiveVal(NULL)
     engine <- NULL
     thinking <- reactiveVal(NULL)
+    undo_pending <- reactiveVal(NULL)
+    undo_sequence <- 0L
     paused <- reactiveVal(FALSE)
     review_request <- reactiveVal(NULL)
     review_sequence <- 0L
@@ -199,7 +203,7 @@ mod_practice_server <- function(id, chess_ctx, mode = "learn") {
       start_game <- function(settings) {
         game_sequence <<- game_sequence + 1L
         settings$game_id <- game_sequence
-        thinking(NULL); paused(FALSE)
+        thinking(NULL); undo_pending(NULL); paused(FALSE)
         engine_session_stop(engine); engine <<- NULL
         local <- find_local_engine()
         if (!is.null(local)) engine <<- engine_session_start(multipv = 5L, engine_path = local)
@@ -216,6 +220,7 @@ mod_practice_server <- function(id, chess_ctx, mode = "learn") {
         start_game(game_settings())
       })
       observeEvent(input$review_game, {
+        req(is.null(undo_pending()))
         request <- play_review_snapshot(chess_ctx, input$state, game_settings())
         if (!is.null(request$error)) {feedback(request$error); return()}
         paused(TRUE); thinking(NULL)
@@ -227,12 +232,33 @@ mod_practice_server <- function(id, chess_ctx, mode = "learn") {
         feedback(if (request$finished) "Your game is ready in Review." else "Game paused for review. Resume here when you are ready.")
       }, priority = 100)
       observeEvent(input$resume, {
-        req(game_settings(), !isTRUE(input$state$game_over))
+        req(game_settings(), is.null(undo_pending()), !isTRUE(input$state$game_over))
         paused(FALSE); last_event(NULL)
         policy(side = game_settings()$side)
         feedback("Game resumed. Take your time.")
         session$sendCustomMessage("tanmai-board-sync", list(container = ns("board")))
       })
+      output$undo_control <- renderUI({
+        settings <- game_settings()
+        available <- !is.null(settings) &&
+          play_undo_available(input$state, settings$side) && is.null(undo_pending())
+        actionButton(ns("undo_turn"), "Undo", class = "btn-sm",
+          title = "Return to your previous decision",
+          disabled = !available)
+      })
+      observeEvent(input$undo_turn, {
+        settings <- game_settings()
+        req(settings, is.null(undo_pending()),
+          play_undo_available(input$state, settings$side))
+        undo_sequence <<- undo_sequence + 1L
+        undo_pending(undo_sequence)
+        thinking(NULL); last_event(NULL)
+        if (!is.null(engine)) try(engine$process$write_input("stop\n"), silent = TRUE)
+        policy(side = settings$side, locked = TRUE)
+        session$sendCustomMessage("tanmai-play-undo", list(
+          container = ns("board"), side = settings$side,
+          locked = paused(), request = undo_sequence))
+      }, priority = 100)
       output$game_actions <- renderUI({
         st <- input$state
         if (is.null(game_settings()) || !length(st$history)) {
@@ -247,16 +273,38 @@ mod_practice_server <- function(id, chess_ctx, mode = "learn") {
             if (paused() && !finished) actionButton(ns("resume"), "Resume game"),
             if (finished) actionButton(ns("rematch"), "Rematch")))
       })
-      play_reply <- function(fen, move) {
+      play_reply <- function(fen, move, revision = NULL) {
+        # Both ends reject stale replies, including moves already in transit
+        # when Undo is clicked. FEN alone is insufficient after replaying a move.
+        current <- input$state
+        if (!is.null(undo_pending()) || paused() ||
+            !identical(current$fen, fen) ||
+            (!is.null(revision) && !identical(current$revision, revision))) {
+          return(invisible(FALSE))
+        }
         if (is.null(move) || !move %in% legal_moves(chess_ctx, fen)) {
           feedback("The computer could not choose a move. Start a new game to try again."); policy(locked = TRUE)
           return()
         }
-        session$sendCustomMessage("tanmai-board-move", list(container = ns("board"), uci = move))
+        session$sendCustomMessage("tanmai-board-move", list(
+          container = ns("board"), uci = move, expectedFen = fen,
+          expectedRevision = revision))
         feedback("Your turn. Take your time.")
+        invisible(TRUE)
       }
       observeEvent(input$state, {
-        st <- input$state; settings <- game_settings(); req(settings, !paused())
+        st <- input$state; settings <- game_settings(); req(settings)
+        # Ignore an acknowledgement superseded by a new game or rematch.
+        if (!is.null(st$undo_ack) && is.null(undo_pending())) return()
+        if (!is.null(undo_pending())) {
+          req(isTRUE(st$undo_ack$request == undo_pending()))
+          undo_pending(NULL)
+          feedback(if (isTRUE(st$undo_ack$undone)) {
+            if (paused()) "Move taken back. Game stays paused; resume when ready."
+            else "Move taken back. Your turn to choose again."
+          } else "No earlier decision is available to undo.")
+        }
+        req(!paused())
         if (isTRUE(st$game_over)) {
           thinking(NULL); policy(locked = TRUE)
           feedback(if (isTRUE(st$checkmate)) {
@@ -271,18 +319,20 @@ mod_practice_server <- function(id, chess_ctx, mode = "learn") {
           move <- tryCatch(practice_computer_move(chess_ctx, st$fen, settings$strength, settings$style), error = function(e) {
             message("WARN code=ERR-PLAY-001 ", conditionMessage(e)); NULL
           })
-          play_reply(st$fen, move)
+          play_reply(st$fen, move, st$revision)
         } else {
           ok <- tryCatch(engine_session_analyse(engine, st$fen), error = function(e) {
             message("WARN code=ERR-PLAY-002 ", conditionMessage(e)); FALSE
           })
-          if (isTRUE(ok)) thinking(list(fen = st$fen, start = Sys.time())) else {
+          if (isTRUE(ok)) thinking(list(fen = st$fen, revision = st$revision, start = Sys.time())) else {
             feedback("Stockfish is unavailable. Start a new game to retry."); policy(locked = TRUE)
           }
         }
       })
       observe({
-        pending <- thinking(); req(pending, !paused())
+        pending <- thinking(); req(pending, !paused(), is.null(undo_pending()))
+        req(identical(input$state$fen, pending$fen),
+          identical(input$state$revision, pending$revision))
         invalidateLater(100, session)
         settings <- game_settings()
         elapsed <- as.numeric(difftime(Sys.time(), pending$start, units = "secs"))
@@ -304,7 +354,7 @@ mod_practice_server <- function(id, chess_ctx, mode = "learn") {
           feedback("The computer search had no scored moves. Start a new game to retry.")
           policy(locked = TRUE); return()
         }
-        play_reply(pending$fen, lines[[selected]]$first)
+        play_reply(pending$fen, lines[[selected]]$first, pending$revision)
       })
       output$opponent <- renderText({
         s <- game_settings()
