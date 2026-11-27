@@ -84,4 +84,56 @@ assert.equal(state().checkmate,true);assert.equal(animationCount,1);
 set({fen:'7k/5Q2/6K1/8/8/8/8/8 b - - 0 1'});
 assert.equal(state().game_over,true);assert.equal(state().checkmate,false);
 assert.equal(host.classList.contains('cv-checkmate'),false);
+// Computer Undo returns to the player's own prior decision, not one ply.
+let undoRequest=0;
+function playPosition(pgn, side) {
+  const g=new Chess();g.loadPgn(pgn);
+  set({fen:g.fen(),pgn:g.pgn(),orientation:side==='b'?'black':'white',
+    practice:true,side,locked:false});
+  return g;
+}
+function undoTurn(side, locked=false) {
+  handlers['tanmai-play-undo']({container:'test',side,locked,request:++undoRequest});
+  assert.equal(state().undo_ack.request,undoRequest);
+}
+const startFen=new Chess().fen();
+let g=playPosition('1. e4 e5','w');
+undoTurn('w');
+assert.equal(state().fen,startFen);assert.equal(state().history.length,0);
+assert.equal(state().can_undo,false);assert.equal(state().turn,'w');
+let replay=new Chess();replay.loadPgn(state().pgn);assert.equal(replay.history().length,0);
+// Black cannot undo the computer's opening before making a decision.
+g=playPosition('1. e4','b');const blackOpening=g.fen();
+assert.equal(state().can_undo,false);undoTurn('b');
+assert.equal(state().undo_ack.undone,false);assert.equal(state().fen,blackOpening);
+g=playPosition('1. e4 e5','b');undoTurn('b');
+assert.equal(state().fen,blackOpening);assert.equal(state().history.length,1);
+assert.equal(state().can_undo,false);
+g=playPosition('1. e4 e5 2. Nf3','b');undoTurn('b');
+assert.equal(state().fen,blackOpening);assert.equal(state().history.length,1);
+// Cancel a pending response, then replay the same move: FEN alone must not
+// allow the old response to reappear after the revision has changed.
+g=playPosition('1. e4','w');
+const oldFen=state().fen,oldRevision=state().revision;
+undoTurn('w');assert.equal(state().fen,startFen);
+handlers['tanmai-board-move']({container:'test',uci:'e7e5',expectedFen:oldFen,expectedRevision:oldRevision});
+assert.equal(state().history.length,0);
+config.onDragStart('e2','wP');config.onDrop('e2','e4');config.onSnapEnd();
+assert.equal(state().fen,oldFen);
+handlers['tanmai-board-move']({container:'test',uci:'e7e5',expectedFen:oldFen,expectedRevision:oldRevision});
+assert.equal(state().history.length,1);
+handlers['tanmai-board-move']({container:'test',uci:'e7e5',expectedFen:oldFen,expectedRevision:state().revision});
+assert.equal(state().history.length,2);undoTurn('w');assert.equal(state().history.length,0);
+// Repeated undo and terminal games restore legal state and PGN history.
+g=playPosition('1. e4 e5 2. Nf3 Nc6','w');undoTurn('w');
+assert.equal(state().history.join(' '),'e4 e5');undoTurn('w');assert.equal(state().history.length,0);
+g=playPosition('1. f3 e5 2. g4 Qh4#','w');assert.equal(state().game_over,true);
+undoTurn('w');assert.equal(state().game_over,false);assert.equal(state().history.join(' '),'f3 e5');
+replay=new Chess();replay.loadPgn(state().pgn);assert.equal(replay.fen(),state().fen);
+g=playPosition('1. f3 e5 2. g4 Qh4#','b');undoTurn('b');
+assert.equal(state().game_over,false);assert.equal(state().history.length,3);assert.equal(state().turn,'b');
+g=playPosition('1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. O-O','w');undoTurn('w');
+assert.equal(state().history.length,6);assert.equal(state().fen.split(' ')[2],'KQkq');
+replay=new Chess();replay.loadPgn(state().pgn);assert.equal(replay.fen(),state().fen);
+console.log('Computer Undo passed: White/Black, pending/completed reply, repeated undo, terminal reopen, PGN/castling and stale same-FEN reply.');
 console.log('Shared board callbacks passed: drag/capture/clear, check/flip, PGN replay, mate once, reduced motion, stalemate.');

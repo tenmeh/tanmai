@@ -1,5 +1,8 @@
 # tanmai (development)
 
+* Play is now the first tab and the default landing page.
+* Undo in computer games returns to your previous decision, including while the
+  computer is thinking or after the game ends, without losing move history.
 * Puzzles adds eight composed positions with theme and difficulty filters, hints,
   retries, and guided replies.
 * Computer games open directly in Review with full move history and player side,
